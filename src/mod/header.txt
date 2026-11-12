@@ -1,0 +1,15 @@
+// ==WindhawkMod==
+// @id              wholeui
+// @name            WholeUI
+// @name:pt-BR      WholeUI
+// @description     One coherent, fluid Windows 11 interface in a single mod
+// @description:pt-BR Uma interface do Windows 11 coerente e fluida em um único mod
+// @version         0.1.0
+// @author          Carlos Landini
+// @github          https://github.com/Onutirachi
+// @homepage        https://github.com/Onutirachi/WholeUI
+// @include         explorer.exe
+// @architecture    x86-64
+// @license         GPL-3.0-only
+// @compilerOptions -lruntimeobject -lole32 -ld2d1 -ldwrite -lgdi32 -lcomctl32 -lpsapi
+// ==/WindhawkMod==

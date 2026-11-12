@@ -1,0 +1,20 @@
+- overrides: [""]
+  $name: Compatibility overrides
+  $name:pt-BR: Exceções de compatibilidade
+  $description: >-
+    One window per line, for example
+    "process=explorer.exe; class=CabinetWClass; level=visual".
+    Use diagnostic mode to copy a ready line.
+  $description:pt-BR: >-
+    Uma janela por linha, por exemplo
+    "process=explorer.exe; class=CabinetWClass; level=visual".
+    Use o modo de diagnóstico para copiar uma linha pronta.
+- diagnosticMode: false
+  $name: Diagnostic mode
+  $name:pt-BR: Modo de diagnóstico
+  $description: >-
+    Shows the identity and level of the window under the cursor.
+    Ctrl+Alt+Shift+C copies it.
+  $description:pt-BR: >-
+    Mostra a identidade e o nível da janela sob o cursor.
+    Ctrl+Alt+Shift+C copia.

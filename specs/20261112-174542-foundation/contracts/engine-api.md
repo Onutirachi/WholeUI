@@ -60,10 +60,15 @@ then notifies. A caller that keeps values across a notification re-reads `Curren
 
 ```cpp
 namespace wholeui::log {
-void Info(const wchar_t* fmt, ...);     // startup, settings, token changes
-void Warn(const wchar_t* fmt, ...);     // ignored overrides, fallbacks, failures
-void Verbose(const wchar_t* fmt, ...);  // per-window lines; only while diagnostic mode is on
+void Info(const wchar_t* area, const wchar_t* fmt, ...);     // startup, settings, token changes
+void Warn(const wchar_t* area, const wchar_t* fmt, ...);     // ignored overrides, fallbacks, failures
+void Verbose(const wchar_t* area, const wchar_t* fmt, ...);  // per-window lines; only while diagnostic mode is on
+void SetVerbose(bool on);                                    // diagnostic mode turns it on (FR-028)
+bool IsVerbose();
 }
 ```
 
-All three forward to `Wh_Log` with a `[area]` prefix.
+All three forward to `Wh_Log` as `[area] message` (`Warn` adds `warning: ` before it).
+`area` names the writing module (`core`, `compat`, `settings`, `tokens`, `diagnostic`).
+Format strings use the Windows wide printf rules (`%s` is a wide string); messages longer
+than 1023 characters are cut.

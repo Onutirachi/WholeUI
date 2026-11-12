@@ -1,27 +1,30 @@
 # Handoff: Foundation
 
-**Updated**: 2026-11-12 | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
+**Updated**: 2026-11-12 (Phase 2) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
 
 ## State
 
-Spec (`56a6b59`), plan (`066fa0a`) and tasks approved and committed. `/speckit-analyze` ran:
-no critical issues; its findings were applied to `tasks.md` and `plan.md` before the commit.
-Phase 1 (T001–T004) validated and committed (`build: pin Windhawk toolchain, flags and SDK files`).
+Spec, plan, tasks, Phase 1 and Phase 2 (T005–T011) validated and committed (Phase 2:
+`feat: add mod skeleton, logging, listener list and test harness`).
 
 ## Done in the last session
 
-- Ran `/speckit-tasks` (54 tasks) and `/speckit-analyze`. Applied: verbose log switch wired
-  with the settings in T031 so US2 can be checked before the overlay; `--compile` maps compiler
-  errors back to `src/<path>:<line>` (no `#line` in the generated file); branch protection
-  folded into T019; tests for `subscriptions.h`; `src/tokens/runtime.*` named; the copy
-  shortcut is observed, not swallowed (readme says so).
-- Phase 1: source folders; `tools/windhawk-sdk/` (Windhawk 2.0.0-alpha.6 headers and
-  `windhawk.lib`, GPL-3.0, byte-identical, hashes in its README); `tools/toolchain.json`;
-  `tools/setup_toolchain.py` (download or reuse, SHA-256, in-place extraction with a completion
-  marker, `clang --version` check). R1 corrected: Windhawk uses llvm-mingw 20250417
-  **msvcrt-i686** (not UCRT/x86_64) with three installer patches; real compile flags taken from
-  windhawk-core `flags.rs` (`-O2 -ffp-exception-behavior=maytrap -s`, no `-Wall`). A probe mod
-  compiled cleanly with the pinned toolchain and flags.
+- Phase 2: `src/mod/header.txt`, `readme.md` (English, then pt-BR), `settings.yaml`
+  (contracts/settings.md verbatim); `src/core/log.*`; `src/core/subscriptions.h`
+  (`ListenerList<Args...>`); `src/main.cpp`; `tests/unit/harness.h`, `main.cpp`,
+  `subscriptions_test.cpp`.
+- Checked with the pinned toolchain: unit tests 7/7 pass, a deliberate failure exits 1 with
+  file, line and test name; a hand-made throwaway amalgamation compiles with Windhawk's flags
+  plus `warning_flags`, no warnings (the real `build.py` is T012+).
+- Logging contract refined (contracts/engine-api.md): `Info/Warn/Verbose(area, fmt, ...)`,
+  plus `SetVerbose`/`IsVerbose`. `Wh_Log`'s own `[line:function]` prefix points to `log.cpp`.
+- Conventions: include guards (no `#pragma once`, it warns in the amalgamated main file);
+  quoted includes are relative to the including file; `main.cpp` includes each `.h` then its
+  `.cpp`.
+- Metadata: `@author Carlos Landini`, `@github`/`@homepage` from the repository remote,
+  `@license GPL-3.0-only` (installed mods use `@license`; acceptance confirms Windhawk shows it).
+- `ListenerList`: a listener removed during a notification is skipped for the rest of that
+  notification on the same thread (checked per call), not only from the next one.
 
 ## Decisions
 
@@ -52,4 +55,4 @@ Phase 1 (T001–T004) validated and committed (`build: pin Windhawk toolchain, f
 
 ## Next step
 
-Phase 2 (T005–T011), then US1 (T012–T019), stopping after T019 for validation.
+US1 (T012–T019), stopping after T019 for validation.
