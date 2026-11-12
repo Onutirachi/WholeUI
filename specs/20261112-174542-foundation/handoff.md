@@ -4,32 +4,45 @@
 
 ## State
 
-`spec.md` written and its three open questions answered by the maintainer; the quality
-checklist passes. Waiting for the maintainer to review the spec. Nothing committed yet.
+Spec approved and committed (`56a6b59`). Plan written: `plan.md`, `research.md`,
+`data-model.md`, `contracts/` (engine API, settings, compatibility doc format) and
+`quickstart.md`. Not committed yet: waiting for the maintainer's review.
 
 ## Done in the last session
 
-- Created the branch and the spec folder; wrote `spec.md` and `checklists/requirements.md`.
-- Recorded the maintainer's answers in the spec's Clarifications section (FR-013a, FR-021,
-  FR-021a, FR-021b).
+- Ran `/speckit-plan`. Inspected the local Windhawk (2.0.0-alpha.6, portable at
+  `D:\Programas\Windhawk`): flags from its editor workspace and core DLL, `windhawk-cli` for
+  local install, localization syntax from installed mods.
 
 ## Decisions
 
-- Context menus (F14) stay in roadmap item 6; their scope (classic Win32 menus only, or also
-  menus of shell surfaces in `explorer.exe`) is decided in that spec.
-- Shell surfaces in `explorer.exe` are always `native` and cannot be raised by overrides
-  (FR-015).
-- A child window never gets a higher level than its top-level window (FR-013); a dialog with
-  hosted pages takes the lowest level among host and pages (FR-013a).
-- Diagnostic mode: overlay next to the cursor plus a copy shortcut; identifies windows of any
-  process, with "unknown" for unreadable fields.
+- Build: Python stdlib script `tools/build.py` makes an amalgamation from `src/main.cpp`;
+  `--check`, `--compile`, `--install` (via `windhawk-cli mod install --file`) (R4).
+- CI and tests: pinned llvm-mingw with Windhawk's flags in `tools/toolchain.json`; fallback is
+  compiling through `windhawk-cli` in CI (R1). In-repo C++ test harness, no dependency (R5).
+- `@architecture x86-64`, `@include explorer.exe` (R2).
+- Localization: `@name:pt-BR`, `$name:pt-BR` in settings; readme holds both languages (R3).
+- Engine classifies lazily on first query; creation hooks only record dialog template IDs
+  and property sheet pages (R6, R8). Built-in rules generated from `docs/compatibility.md`,
+  which gets Class/Template columns and a locked "Shell surfaces" table (R9).
+- Overrides are strings: `process=…; module=…; class=…; template=…; level=…` (R10).
+- Tokens read from WinRT `UISettings` (accent shades, app mode, text scale) (R11).
+- Diagnostic: single instance via mutex, 50 ms polling, click-through D2D layered overlay,
+  copy shortcut Ctrl+Alt+Shift+C (fixed) (R14).
+
+- Verified after the plan commit (R1, R11): Windhawk's toolchain is clang 20.1.3,
+  mingw-w64 13, UCRT; `windows.ui.viewmanagement.h` is available. The maintainer installed
+  Windhawk's dev tools from the UI (`windhawk-cli` cannot). CI uses the public llvm-mingw
+  release on LLVM 20.1.3; Windhawk headers and `windhawk.lib` go to `tools/windhawk-sdk/` if
+  their license allows (task checks), else a `.def`-generated import lib.
 
 ## Open questions
 
-- None in the spec. For the plan: how to know a property sheet's pages before it is shown
-  (FR-013a), how to read creating module and template ID across processes (FR-021), Windhawk
-  localization support (FR-009), Windhawk compiler version and flags for CI (FR-004).
+- Still to verify: `$name:pt-BR` honored in settings (R3, acceptance step 10); property
+  sheet page capture on a live system (R8, spike branch); license of Windhawk's headers and
+  import library (R1, setup task).
 
 ## Next step
 
-Maintainer reviews `spec.md`. Then optionally `/speckit-clarify`, then `/speckit-plan`.
+Plan approved and committed (`f249425`); research update for R1/R11 to be committed.
+Run `/speckit-tasks`.
