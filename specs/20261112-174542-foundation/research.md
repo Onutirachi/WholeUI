@@ -39,8 +39,8 @@ probe mod was compiled with `windhawk-cli mod install --file --disabled`, then r
 
 - `windhawk-cli` does not download the compiler: with an empty `Compiler` folder it fails
   ("failed to run bin\clang++.exe"). The download is a UI action ("install dev tools").
-- Toolchain: **clang 20.1.3** (llvm-project `923a5c4f83d2`), **mingw-w64 13.0.0**, UCRT,
-  standard llvm-mingw layout (`-rtlib=compiler-rt -unwindlib=libunwind -stdlib=libc++
+- Toolchain: **clang 20.1.3** (llvm-project `923a5c4f83d2`), **mingw-w64 13.0.0**, standard
+  llvm-mingw layout (`-rtlib=compiler-rt -unwindlib=libunwind -stdlib=libc++
   -fuse-ld=lld`).
 - Windhawk files: `Compiler\include\windhawk_api.h`, `windhawk_api_internal.h`,
   `windhawk_utils.h`, `windhawk_tool_mod.h`; import library `Engine\2.0.0_1\64\windhawk.lib`.
@@ -51,15 +51,43 @@ probe mod was compiled with `windhawk-cli mod install --file --disabled`, then r
 
 - CI compiles the generated file with the **public llvm-mingw release built on LLVM 20.1.3
   (UCRT, x86_64 host)**, with the flags above plus the mod's `@compilerOptions`, for target
-  `x86_64-w64-mingw32` only (see R2). The setup task picks the release whose `clang
-  --version` prints exactly `20.1.3` and mingw-w64 13, and records its URL and SHA-256 in
-  `tools/toolchain.json`, read by both the build script and CI.
+  `x86_64-w64-mingw32` only (see R2). *Superseded by the setup findings below: Windhawk uses
+  the msvcrt, i686-host release.*
 - Windhawk's headers and `windhawk.lib` are not published as a separate download. The setup
   task checks their license in the Windhawk repository; if it allows (Windhawk is
   GPL-3.0, compatible with WholeUI), the four headers and the import library are copied into
   `tools/windhawk-sdk/` with a note naming their Windhawk version. Otherwise CI generates the
   import library from a `.def` listing the `Wh_*` exports and fetches the headers from the
   Windhawk repository at the matching tag.
+
+**Setup findings (T002, T003; 2026-11-12)**
+
+- Windhawk's compiler is **llvm-mingw 20250417, msvcrt variant, i686 host**
+  (`llvm-mingw-20250417-msvcrt-i686.zip`), not UCRT/x86_64: `__MSVCRT_VERSION__` is `0x600`,
+  and `ramensoftware/windhawk-dependencies` (release v1.6) states that `windhawk-compiler-1.6`
+  is a byte-identical subset of that archive. Compared file by file: all compiler binaries
+  match. Windhawk 2.0's installer then (a) renames the runtime DLL imports in
+  `libc++.dll.a` / `libunwind.dll.a` to `libc++.whl` / `libunwind.whl`, (b) removes a duplicate
+  `IReference<boolean>` block from `windows.foundation.h`, (c) adds C++/WinRT (`include/winrt`),
+  WIL (`include/wil`) and the four Windhawk headers. None of these affect a compile check of
+  WholeUI, which uses the WinRT ABI headers and neither C++/WinRT nor WIL; the DLL CI builds is
+  never shipped. If WholeUI ever uses C++/WinRT or WIL, CI must add them.
+- The real compile flags come from `build_compile_args` in windhawk-core
+  (`src/windhawk-core/core/src/services/compiler/flags.rs`, public on `main`): `-std=c++23 -O2
+  -ffp-exception-behavior=maytrap -mguard=cf-nochecks -shared -s -DUNICODE -D_UNICODE
+  -Wno-unneeded-internal-declaration -Wno-deprecated-declarations`, the Windows version
+  defines, `-D__USE_MINGW_ANSI_STDIO=0 -DWH_MOD -DWH_MOD_ID -DWH_MOD_VERSION
+  -DWH_WINDHAWK_VERSION=0x<maj><min><patch>00`, `windhawk.lib`, `-include windhawk_api.h
+  -target x86_64-w64-mingw32 -Wl,--export-all-symbols`, then the mod's options. `-Wall
+  -Wextra` and the other warning flags are the editor set only; WholeUI's check adds them
+  on top (`warning_flags` in `tools/toolchain.json`).
+- License: Windhawk is GPL-3.0. The four headers ship with Windhawk (installer, developer
+  tools) and are not in the repository's source tree; `windhawk.lib` is the engine's import
+  library (23 `InternalWh_*` exports, a subset of `src/windhawk/engine/_exports.def`). Copied
+  unchanged into `tools/windhawk-sdk/` with version, source and hashes; no `.def` route.
+- `tools/toolchain.json` pins the archive (URL, SHA-256 `f38c6a8c…3090`, size) and the flags;
+  `tools/setup_toolchain.py` fetches it. A probe mod compiled with these flags, the SDK copy
+  and the mod libraries, with no warnings.
 - Locally, `build.py --compile` uses `$WINDHAWK_ROOT\Compiler` directly, so the maintainer's
   check uses Windhawk's own files.
 

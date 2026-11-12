@@ -1,0 +1,76 @@
+{
+  "notes": [
+    "Pinned toolchain and Windhawk compile flags (research R1). Read by tools/setup_toolchain.py, tools/build.py, tools/test.py and CI.",
+    "Windhawk's compiler is llvm-mingw 20250417 (LLVM 20.1.3), msvcrt variant, i686 host; its binaries are byte-identical to this archive.",
+    "compile_flags mirrors build_compile_args in windhawk-core (src/windhawk-core/core/src/services/compiler/flags.rs), except that the source is a file instead of stdin.",
+    "warning_flags are WholeUI's own check (Windhawk's editor set); Windhawk itself compiles mods without them."
+  ],
+  "llvm_mingw": {
+    "release": "20250417",
+    "llvm_version": "20.1.3",
+    "variant": "msvcrt-i686",
+    "url": "https://github.com/mstorsjo/llvm-mingw/releases/download/20250417/llvm-mingw-20250417-msvcrt-i686.zip",
+    "sha256": "f38c6a8ca816db957e6dcfecc2f1ad11523fc2cd07809162f6c9f20b5b3b3090",
+    "size": 160489574,
+    "archive_root": "llvm-mingw-20250417-msvcrt-i686",
+    "skip_prefixes": ["aarch64-w64-mingw32/", "armv7-w64-mingw32/", "i686-w64-mingw32/"]
+  },
+  "windhawk": {
+    "version": "2.0.0-alpha.6",
+    "version_hex": "0x02000000",
+    "sdk_include": "tools/windhawk-sdk/include",
+    "sdk_lib": "tools/windhawk-sdk/64/windhawk.lib",
+    "default_root": "D:\\Programas\\Windhawk"
+  },
+  "target": "x86_64-w64-mingw32",
+  "compile_flags": [
+    "-std=c++23",
+    "-O2",
+    "-ffp-exception-behavior=maytrap",
+    "-mguard=cf-nochecks",
+    "-shared",
+    "-s",
+    "-DUNICODE",
+    "-D_UNICODE",
+    "-Wno-unneeded-internal-declaration",
+    "-Wno-deprecated-declarations",
+    "-DWINVER=0x0A00",
+    "-D_WIN32_WINNT=0x0A00",
+    "-D_WIN32_IE=0x0A00",
+    "-DNTDDI_VERSION=0x0A000008",
+    "-D__USE_MINGW_ANSI_STDIO=0",
+    "-DWH_MOD",
+    "-DWH_MOD_ID=L\"{mod_id}\"",
+    "-DWH_MOD_VERSION=L\"{mod_version}\"",
+    "-DWH_WINDHAWK_VERSION={windhawk_version_hex}",
+    "{windhawk_lib}",
+    "-x",
+    "c++",
+    "{source}",
+    "-include",
+    "windhawk_api.h",
+    "-target",
+    "x86_64-w64-mingw32",
+    "-Wl,--export-all-symbols",
+    "-o",
+    "{output}"
+  ],
+  "warning_flags": [
+    "-Wall",
+    "-Wextra",
+    "-Wno-unused-parameter",
+    "-Wno-missing-field-initializers",
+    "-Wno-cast-function-type-mismatch",
+    "-Wno-pragma-pack",
+    "-Wno-pragma-system-header-outside-header"
+  ],
+  "mod_libraries": [
+    "-lruntimeobject",
+    "-lole32",
+    "-ld2d1",
+    "-ldwrite",
+    "-lgdi32",
+    "-lcomctl32",
+    "-lpsapi"
+  ]
+}
