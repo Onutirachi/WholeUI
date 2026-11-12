@@ -1,0 +1,25 @@
+# Build output
+build/
+dist/
+out/
+
+# Environment and local overrides
+.env
+.env.*
+*.local
+.claude/settings.local.json
+
+# Logs
+*.log
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Python (build and analysis tools)
+__pycache__/
+*.pyc
+.venv/
