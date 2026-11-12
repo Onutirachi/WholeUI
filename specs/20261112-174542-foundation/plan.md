@@ -91,7 +91,7 @@ specs/20261112-174542-foundation/
 │   └── compatibility-doc.md # docs table format, overlay text, clipboard lines
 ├── checklists/requirements.md
 ├── handoff.md
-└── tasks.md              # next step (/speckit-tasks)
+└── tasks.md
 ```
 
 ### Source Code (repository root)
@@ -105,6 +105,7 @@ src/
 │   └── settings.yaml         # contracts/settings.md
 ├── core/
 │   ├── log.h / log.cpp       # Wh_Log wrappers
+│   ├── subscriptions.h       # PURE: thread-safe listener list (engine, tokens)
 │   └── worker.h / worker.cpp # worker thread with message loop (UISettings, overlay)
 ├── settings/
 │   ├── overrides.h / .cpp    # PURE: override string parser
@@ -116,7 +117,8 @@ src/
 │   └── engine.h / .cpp       # cache, locking, listeners (contracts/engine-api.md)
 ├── tokens/
 │   ├── tokens.h / .cpp       # PURE: TokenInputs, Tokens, Resolve()
-│   └── system.h / .cpp       # UISettings + DirectWrite font check, change events
+│   ├── system.h / .cpp       # UISettings + DirectWrite font check, change events
+│   └── runtime.h / .cpp      # Current() snapshot, change subscriptions
 └── diagnostic/
     ├── format.h / .cpp       # PURE: overlay text, override line, table row
     └── overlay.h / .cpp      # single-instance mutex, timer, D2D layered window, clipboard
@@ -125,15 +127,17 @@ tests/
 ├── unit/
 │   ├── harness.h
 │   ├── main.cpp
+│   ├── subscriptions_test.cpp
 │   ├── rules_test.cpp        # FR-012, FR-013, FR-013a, FR-015, unknown fields, SC-004 timing
 │   ├── overrides_test.cpp    # syntax and every FR-017 error
 │   ├── tokens_test.cpp       # light/dark, 3 accents, 100/150/225 %, font fallback
 │   └── format_test.cpp       # overlay text, clipboard lines
 └── tools/
-    └── test_build.py         # amalgamation, determinism, compatibility.md parser
+    ├── test_build.py         # amalgamation, determinism, diagnostic mapping, compatibility.md parser
+    └── fixtures/             # amalgamation/ and compat/ inputs
 
 tools/
-├── build.py                  # generate, --check, --compile, --install
+├── build.py                  # generate, --check, --compile (maps errors to src/), --install
 ├── test.py                   # build and run C++ tests, run Python tests
 ├── setup_toolchain.py        # fetch pinned llvm-mingw (+ windhawk_api.h) into build/toolchain
 ├── toolchain.json            # pinned compiler version, URL, SHA-256, flags, mod libraries

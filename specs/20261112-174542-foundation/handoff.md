@@ -4,15 +4,16 @@
 
 ## State
 
-Spec approved and committed (`56a6b59`). Plan written: `plan.md`, `research.md`,
-`data-model.md`, `contracts/` (engine API, settings, compatibility doc format) and
-`quickstart.md`. Not committed yet: waiting for the maintainer's review.
+Spec (`56a6b59`), plan (`066fa0a`) and tasks approved and committed. `/speckit-analyze` ran:
+no critical issues; its findings were applied to `tasks.md` and `plan.md` before the commit.
 
 ## Done in the last session
 
-- Ran `/speckit-plan`. Inspected the local Windhawk (2.0.0-alpha.6, portable at
-  `D:\Programas\Windhawk`): flags from its editor workspace and core DLL, `windhawk-cli` for
-  local install, localization syntax from installed mods.
+- Ran `/speckit-tasks` (54 tasks) and `/speckit-analyze`. Applied: verbose log switch wired
+  with the settings in T031 so US2 can be checked before the overlay; `--compile` maps compiler
+  errors back to `src/<path>:<line>` (no `#line` in the generated file); branch protection
+  folded into T019; tests for `subscriptions.h`; `src/tokens/runtime.*` named; the copy
+  shortcut is observed, not swallowed (readme says so).
 
 ## Decisions
 
@@ -44,5 +45,5 @@ Spec approved and committed (`56a6b59`). Plan written: `plan.md`, `research.md`,
 
 ## Next step
 
-Plan approved and committed (`f249425`); research update for R1/R11 to be committed.
-Run `/speckit-tasks`.
+`/speckit-implement`, starting with Phase 1 (T001–T004) and stopping after US1 (T019) for
+validation.

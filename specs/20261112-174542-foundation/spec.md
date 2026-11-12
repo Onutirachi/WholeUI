@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-12
 
-**Status**: Draft
+**Status**: Approved
 
 **Input**: User description: "Foundation for WholeUI (roadmap item 1, features F10 and F11): source layout split into modules by area; a build script that generates the single wholeui.wh.cpp Windhawk loads (never edited by hand); CI that compiles the generated file with the same compiler and flags Windhawk uses, plus unit tests for pure logic; the design tokens (WinUI/Fluent metrics: Segoe UI Variable with Segoe UI fallback, type ramp, corner radii, spacing, control heights, selection and focus indicators, accent color, light and dark palettes, following system accent, light/dark mode and text scaling); the compatibility list engine (F10) that matches windows by process image, creating module, window class and dialog template ID (never titles), with levels native/visual/full, unknown windows default to native, built-in defaults matching docs/compatibility.md, user overrides in mod settings (S6), fail-safe behavior; and the diagnostic mode (F11, setting S7) that identifies the window under the cursor (process, module, class, template ID, current level) so broken windows can be reported precisely. The mod id is wholeui, injects only into explorer.exe at this stage, and must not change any window's appearance yet: this spec delivers the infrastructure other specs build on. Mod name, description, readme and settings in English and Portuguese (Brazil)."
 
