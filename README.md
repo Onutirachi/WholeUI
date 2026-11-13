@@ -2,7 +2,7 @@
 
 One Windhawk mod for a coherent, fluid Windows 11 interface: a GPU-accelerated File Explorer
 with smooth animations, a unified backdrop, consistent WinUI typography and icons, and
-modernized Win32 windows that are validated one by one so nothing ends up half styled.
+modernized Win32 windows that are validated one by one so none becomes hard to read or use.
 
 Status: early design. See [the roadmap](docs/roadmap.md).
 

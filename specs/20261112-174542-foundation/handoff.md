@@ -487,8 +487,61 @@ it was. `Wh_ModUninit`: dialog hooks off → `diagnostic::Stop` → `system::Sto
   `compat::Classify`; the identity reads (`ReadIdentity`, module name) are not in it and are
   measured live, if needed, in T050.
 
+## T050 live acceptance, run 1 (2026-11-13): step 11 crashes Explorer
+
+Windows 11 26H2, build 26300.9711. Other Windhawk mods enabled (taskbar/Start/notification
+stylers, elastic pill, multi-tray, shell-flyout-positions, others).
+
+- Step 1 passed: the DLL was loaded only in the 3 `explorer.exe`.
+- Steps 3–4 passed by the maintainer's eye (control and top-level shown); the overlay log says
+  123–131 ms from rest to update (SC-005 < 200 ms).
+- Step 5 passed: `process=explorer.exe; module=shell32.dll; class=#32770; level=native` and
+  the table row; template `—` because the Run dialog was in pid 11956 and the overlay owner in
+  48468 (expected).
+- Step 9 partly: light/dark and text scale 150 % re-resolved in both processes; no accent
+  change appeared in the log (accent stayed #0078D4; ask the maintainer whether it was
+  changed).
+- Steps 6–8 not run (no override was ever loaded). Steps 2 and 10: no result recorded yet.
+- **Step 11 failed (SC-008, FR-023).** A Run dialog opened in step 3 (pid 11956, the shell
+  process) was still open when the mod was disabled. Windhawk showed "mod task in progress"
+  and could not enable or disable any more; pid 48468 unloaded at once, 11956 logged nothing
+  and kept the DLL. Stack walk (scratchpad `stacks.py`, dbghelp via ctypes): thread 54368 was
+  inside `DialogBoxIndirectParamW` (the Run dialog's modal loop), with our hook below it. When
+  the maintainer closed the Run dialog, Explorer crashed: `BEX64`, `c0000005`, faulting module
+  `local@wholeui_0.1.0_843081.dll_unloaded`, offset `0x9132`. The DLL had been freed while the
+  hook's frame was still on that thread's stack, and the modal call returned into freed code.
+- **Cause**: R8 hooks functions that run a modal loop (`DialogBoxParamW`,
+  `DialogBoxIndirectParamW`, `PropertySheetW`). Any such call open at unload returns into an
+  unloaded DLL. T047/T048 live checks passed only because no modal dialog was open.
+- Proposed fix (not approved yet): never hook a function that can wait or run a message loop.
+  Drop the four `user32` dialog hooks and `PropertySheetW`; take template IDs from the
+  `FindResourceExW`/`FindResourceW` hooks (which return at once; spike finding 3), which arm
+  the thread CBT hook; take a sheet's pages from `CreatePropertySheetPageW` calls on the
+  thread (and RT_DIALOG lookups) before the frame `#32770` is created; keep the "page added
+  later" path for pages not seen. Needs a re-spike on its own branch to confirm the order of
+  lookups and page creation, then research R8, plan and tasks updated before code, then T050
+  from step 1 again, with "disable with Run and Properties open, then close them" added to
+  step 11.
+
 ## Next step
 
 1. T048 is committed (`feat: wire diagnostic mode into the mod`, not pushed). T044–T047 and
    earlier US3/US4 commits are also unpushed. T049 changed only handoff.md and tasks.md.
-2. T050 live acceptance with the maintainer (quickstart.md steps 1–11), then T051–T054.
+2. T050 run 1 found the unload crash above. **The maintainer approved the fix** (2026-11-13).
+   Next: re-spike on its own branch (`spike/20261113-unload-safe-dialogs`), update R8 / plan /
+   tasks, add the "never hook a function that can wait or run a message loop" rule to
+   AGENTS.md, implement, and run T050 again from step 1.
+3. **Constitution 2.0.0 (approved in principle, 2026-11-13, not committed)**: principle I is
+   now "never harder to read or use"; a whole hosted page (third-party Properties tab) may stay
+   as Windows draws it inside a handled window, single controls are never mixed; unloading
+   must be safe at any moment (no hook on a function that can wait or run a message loop).
+   The maintainer's reason: the real failure is an unreadable window (their screenshot of
+   Environment Variables under another mod: dark group titles, blank list headers), while a
+   native third-party page inside a dark frame stayed readable. Spec updated: clarification
+   2026-11-13, edge cases, FR-013a (each page its own level, capped by host; controls capped
+   by their page), new FR-023a, SC-008 and acceptance step 8. README line 5 and AGENTS.md rule
+   added. Still to update in the plan step: research R8 (no `PropertySheetW` or modal
+   hooks; pages need not be known before the sheet is shown, so `PageList`,
+   `OnSheetPagesChanged` and `LoweredByPage` go away, replaced by a page cap), data-model.md,
+   contracts engine-api.md and compatibility-doc.md (`lowered by page` reason), quickstart
+   step 11, tasks (new tasks after T050).

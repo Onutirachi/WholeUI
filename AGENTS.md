@@ -50,6 +50,9 @@ continue from it alone.
 - **No options by default.** The WinUI look, GPU acceleration and animations are not
   optional; a new setting needs a justification in the spec (constitution IV).
 - Never edit the generated `.wh.cpp` by hand; change the sources and rebuild.
+- **Never hook a function that can wait or run a message loop** (modal dialogs, message
+  boxes, `GetMessage`, waits). A call still running at unload returns into freed code and
+  crashes the process (constitution I).
 
 ## Spec workflow (Spec Kit)
 

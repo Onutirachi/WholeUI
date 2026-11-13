@@ -18,7 +18,18 @@
 - Q: Which processes can diagnostic mode identify? → A: Every process; fields that cannot be
   read from outside a process show "unknown".
 - Q: Which level applies when a dialog hosts pages from another module with a different
-  level? → A: The whole window takes the lowest level among host and pages.
+  level? → A: The whole window takes the lowest level among host and pages. (Superseded on
+  2026-11-13, see below.)
+
+### Session 2026-11-13
+
+- Q: Must a Properties dialog drop entirely to `native` because one third-party page cannot be
+  handled? → A: No. Each hosted page has its own level, never above the host's; a page left
+  `native` stays exactly as Windows draws it inside the handled host, as one intact rectangle
+  (constitution 2.0.0, principle I). Single controls are still never mixed.
+- Q: What did live acceptance find about unloading? → A: Hooks on modal dialog functions
+  crashed Explorer when the mod was disabled with the Run dialog open. Unloading must be safe
+  at any moment, so no hook may be set on a function that can wait or run a message loop.
 
 ## Context
 
@@ -179,10 +190,15 @@ changing when the system settings change.
   cannot be read): it keeps the level decided from the identity known at classification, and
   unreadable fields count as not matching.
 - A dialog hosts pages created by another module, such as a third-party page inside a
-  Properties dialog, and host and page resolve to different levels: the whole window takes the
-  lowest level among the host and all its pages, so it is never half styled (FR-013a).
-- A child window resolves to a higher level than its top-level window: the child never gets a
-  higher level than its top-level window (constitution I, no half-styled windows).
+  Properties dialog, and host and page resolve to different levels: each page keeps its own
+  level, never above the host's, and a `native` page stays as Windows draws it as a whole
+  (FR-013a). A page that appears only when its tab is first selected is classified then.
+- A child window resolves to a higher level than its top-level window, or a control inside a
+  hosted page resolves higher than that page: it gets the lower level (FR-013, FR-013a), so
+  controls are never mixed (constitution I).
+- The mod is disabled while a modal dialog (Run, a Properties dialog, a message box) is open
+  in `explorer.exe`: the mod unloads at once and the dialog keeps working and closes normally
+  (FR-023a).
 - The settings contain hundreds of overrides: classification still meets SC-004.
 - A Windows update changes a class name or template ID: the rule no longer matches and the
   window falls back to `native`, which is safe; the diagnostic mode shows the new identity.
@@ -233,11 +249,12 @@ changing when the system settings change.
   a built-in rule; remaining ties resolve to the lower level.
 - **FR-013**: A child window MUST NOT get a higher level than the top-level window it belongs
   to.
-- **FR-013a**: A window that hosts pages or child dialogs created by other modules (for example
-  a Properties dialog with third-party pages) MUST take, as a whole, the lowest level among the
-  host and every hosted page. The level MUST be decided before the window is first shown,
-  using every page known at that point; if a page with a lower level appears later, the whole
-  window drops to that level and is restored to how Windows draws it.
+- **FR-013a**: In a window that hosts pages or child dialogs (for example a Properties dialog
+  with third-party pages), the host and each hosted page (a child `#32770`) MUST be classified
+  on their own identities; a page MUST NOT get a higher level than the host (FR-013), and a
+  window inside a hosted page MUST NOT get a higher level than that page. A page left
+  `native` inside a handled host stays exactly as Windows draws it, as a whole. A page's
+  level MUST be known before the page is first shown.
 - **FR-014**: The built-in rules MUST match `docs/compatibility.md`. Each built-in entry in that
   document records level, Windows build tested and validation date; an entry still marked
   "to do" ships as `native`.
@@ -271,6 +288,9 @@ changing when the system settings change.
   intercept input meant for other windows.
 - **FR-023**: Turning diagnostic mode off or unloading the mod MUST remove everything it shows
   immediately.
+- **FR-023a**: Unloading the mod MUST be safe at any moment, including while a modal dialog,
+  property sheet or message box is open in an injected process. The mod MUST NOT hook a
+  function that can wait or run a message loop (constitution I).
 
 **Design tokens**
 
@@ -329,8 +349,9 @@ changing when the system settings change.
 - **SC-007**: Unit tests cover every precedence rule in FR-012 and FR-013, malformed override
   handling in FR-017, and token resolution for light and dark mode, at least three accent
   colors and text scales of 100%, 150% and 225%.
-- **SC-008**: Disabling the mod while File Explorer windows are open leaves them working and
-  unchanged, with no restart of `explorer.exe`.
+- **SC-008**: Disabling the mod while File Explorer windows, the Run dialog and a Properties
+  dialog are open leaves them working and unchanged, with no restart of `explorer.exe`, also
+  after those dialogs are closed.
 
 ## Acceptance on a live system
 
@@ -350,7 +371,8 @@ Steps the maintainer runs on Windows 11 (build recorded in the handoff):
    tokens re-resolved.
 7. Switch Windhawk's language to Portuguese (Brazil); confirm name, description and settings are
    translated.
-8. Disable the mod with Explorer windows open; confirm they stay working (SC-008).
+8. Disable the mod with Explorer windows, the Run dialog and a Properties dialog open; confirm
+   they stay working, also after the dialogs are closed (SC-008, FR-023a).
 
 ## Assumptions
 
