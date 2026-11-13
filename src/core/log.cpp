@@ -17,7 +17,7 @@ void Write(const wchar_t* severity, const wchar_t* area, const wchar_t* fmt, va_
     int written = _vsnwprintf(message, kMaxMessage - 1, fmt, args);
     if (written < 0) {
         // Truncated (or a format error): _vsnwprintf leaves the buffer unterminated.
-        message[kMaxMessage - 1] = L'\0';
+        message[kMaxMessage - 1] = ;
     }
     Wh_Log(L"%s[%s] %s", severity, area, message);
 }
