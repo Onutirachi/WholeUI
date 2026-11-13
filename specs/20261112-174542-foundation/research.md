@@ -69,9 +69,16 @@ probe mod was compiled with `windhawk-cli mod install --file --disabled`, then r
   match. Windhawk 2.0's installer then (a) renames the runtime DLL imports in
   `libc++.dll.a` / `libunwind.dll.a` to `libc++.whl` / `libunwind.whl`, (b) removes a duplicate
   `IReference<boolean>` block from `windows.foundation.h`, (c) adds C++/WinRT (`include/winrt`),
-  WIL (`include/wil`) and the four Windhawk headers. None of these affect a compile check of
-  WholeUI, which uses the WinRT ABI headers and neither C++/WinRT nor WIL; the DLL CI builds is
-  never shipped. If WholeUI ever uses C++/WinRT or WIL, CI must add them.
+  WIL (`include/wil`) and the four Windhawk headers. (a) and (c) do not affect a compile check
+  of WholeUI, which uses neither C++/WinRT nor WIL; the DLL CI builds is never shipped. If
+  WholeUI ever uses C++/WinRT or WIL, CI must add them. (b) does: with the public header,
+  including `windows.ui.viewmanagement.h` fails (`boolean` is `unsigned char` in mingw-w64,
+  so `IReference<BYTE>` is defined twice). `src/tokens/system.cpp` defines that block's two
+  include guards (`____FIReference_1_boolean_FWD_DEFINED__`,
+  `____FIReference_1_boolean_INTERFACE_DEFINED__`) before the include, which gives the same
+  result as Windhawk's header; nothing else in the headers names that type. Found when CI
+  first compiled `system.cpp` (2026-11-14). To check locally with the pinned toolchain, set
+  `WINDHAWK_ROOT` to a folder without Windhawk.
 - The real compile flags come from `build_compile_args` in windhawk-core
   (`src/windhawk-core/core/src/services/compiler/flags.rs`, public on `main`): `-std=c++23 -O2
   -ffp-exception-behavior=maytrap -mguard=cf-nochecks -shared -s -DUNICODE -D_UNICODE

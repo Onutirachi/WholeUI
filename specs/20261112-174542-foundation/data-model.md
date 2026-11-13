@@ -91,6 +91,10 @@ resolved values below. `resolveTokens(TokenInputs) → Tokens` is a pure functio
 
 Defaults when a system read fails: `dark = false`, accent `#0078D4`, light 1–3
 `#429CE3 #76B9ED #99EBFF`, dark 1–3 `#005A9E #004275 #002642`, `textScale = 1.0`.
+Each input falls back on its own, except that the accent and its six shades are one input:
+if any of the seven colors cannot be read, all seven take their defaults, so the shades
+always belong to the accent. A text scale outside 1.00 to 2.25 is clamped (with a warning).
+A failed font check assumes the variable font is present.
 
 ### Typography
 

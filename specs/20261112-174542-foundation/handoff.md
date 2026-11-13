@@ -1,6 +1,6 @@
 # Handoff: Foundation
 
-**Updated**: 2026-11-13 (US4: T037 worker thread committed) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
+**Updated**: 2026-11-13 (US4: T038 system reads committed) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
 
 ## State
 
@@ -223,7 +223,39 @@ the **scaled** size (at 150 % `body` is 21 px → Display).
 - Results: `build.py --check --compile` clean; `tools/test.py` 72/72 C++, 43/43 Python; the
   clean build is installed.
 
+## T038 system reads (2026-11-13)
+
+`src/tokens/system.h` / `system.cpp` (not PURE), namespace `wholeui::tokens::system`:
+`using InputsFn = void (*)(const TokenInputs&, void* context)`; `bool Start(InputsFn,
+void*)`; `void Stop()`, both `noexcept`. Included in `main.cpp` but **not called yet**
+(T040 wires `Start`/`Stop`; `Stop` must run before `worker::Stop`).
+
+- `Start` posts one task: create `UISettings` (`WindowsCreateStringReference` →
+  `RoGetActivationFactory` → `ActivateInstance`, QI `IUISettings3` for colors and
+  `IUISettings2` for text scale), register both events, then read and call `InputsFn` on the
+  worker. Each event posts one re-read (`g_rereadPending` coalesces events queued together).
+- Handler: one agile object (`ITypedEventHandler<UISettings*, IInspectable*>` +
+  `IAgileObject`) registered for both events; it only posts to the worker.
+- `Stop` posts: remove both registrations, release handler and settings, then wait up to
+  1 s (10 ms steps) for the live-handler count to reach 0 (an event in flight on another
+  thread), else one `log::Warn`.
+- Failures: each read falls back separately with one `log::Warn`; the accent and its six
+  shades are one input (any failure → all seven default); text scale outside 1.00–2.25 is
+  clamped; failed font check → assumed present. Recorded in data-model.md.
+- Dark = not `IsColorLight(Background)` (`5G + 2R + B > 1024`).
+- Live check (temporary logging callback, reverted): load read `dark=1`, accent `0078D4`
+  with system shades `0091F8 4CC2FF 99EBFF / 0067C0 003E92 001A68` (they differ from the
+  documented failure defaults, as expected), scale 1.00, font present, on the worker.
+  Maintainer toggled light/dark, accent (orange `F7630C` and back) and text size 150 % and
+  back: every change arrived with correct values. Each change gives **2–3 identical reads**
+  (Windows raises the event several times, too far apart to coalesce): **T039 should skip
+  the swap/notify/Info log when the inputs equal the current ones.** Reinstall unloaded
+  cleanly (`[worker] stopped`, no handler-wait warning).
+- Results: `build.py --check --compile` clean; `tools/test.py` 72/72 C++, 43/43 Python; the
+  clean build is installed.
+
 ## Next step
 
-1. T037 committed as `feat: add worker thread` (not pushed).
-2. Phase 5 (US4): T038 (system reads), T039 (runtime snapshot), T040 (wiring in `main.cpp`).
+1. T038 committed as `feat: add system token reads` (not pushed).
+2. T039 (runtime snapshot; skip unchanged inputs), then T040 (wire worker + `system::Start`
+   with the runtime's callback, `system::Stop` before `worker::Stop`).

@@ -21,6 +21,10 @@
 #include "compat/engine.h"
 #include "compat/engine.cpp"
 #include "compat/dialog_hooks.cpp"
+#include "tokens/tokens.h"
+#include "tokens/tokens.cpp"
+#include "tokens/system.h"
+#include "tokens/system.cpp"
 
 namespace {
 
