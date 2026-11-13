@@ -62,6 +62,23 @@ TEST(subscriptions_remove) {
     CHECK_EQ(b.calls, 1);
 }
 
+TEST(subscriptions_clear) {
+    ListenerList<int> list;
+    Counter a, b;
+    SubscriptionId idA = list.Add(&Count, &a);
+    list.Add(&Count, &b);
+
+    list.Clear();
+    CHECK_EQ(list.Size(), 0u);
+    CHECK(!list.Remove(idA));
+    list.Notify(1);
+    CHECK_EQ(a.calls, 0);
+    CHECK_EQ(b.calls, 0);
+
+    SubscriptionId again = list.Add(&Count, &a);
+    CHECK(again != idA);
+}
+
 TEST(subscriptions_ids_are_not_reused) {
     ListenerList<int> list;
     Counter a;

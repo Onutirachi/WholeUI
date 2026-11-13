@@ -52,6 +52,12 @@ public:
         return true;
     }
 
+    // Removes every listener (mod unload). Ids stay unique: a later Add never reuses one.
+    void Clear() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        entries_.clear();
+    }
+
     std::size_t Size() const {
         std::lock_guard<std::mutex> lock(mutex_);
         return entries_.size();

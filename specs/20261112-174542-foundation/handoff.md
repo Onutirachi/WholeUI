@@ -1,12 +1,14 @@
 # Handoff: Foundation
 
-**Updated**: 2026-11-13 (US2: T020–T027) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
+**Updated**: 2026-11-13 (US2: T028–T031) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
 
 ## State
 
 Spec, plan, tasks, Phase 1, Phase 2 and US1 (T012–T019) done and committed. The branch is on
 GitHub with draft pull request #1; CI ("Build and test") passes in about 35 s. US2 tests and
-pure logic (T020–T027) are done, validated and committed (not pushed yet).
+pure logic (T020–T027) are committed (not pushed yet). T028–T030 (settings, identity, engine)
+and T031 (wiring in `main.cpp`) are committed as `feat: add settings, window identity and
+compatibility engine` (not pushed yet).
 
 US1 results kept for reference: `build.py` writes in 3 ms, `--compile` about 1.2 s (SC-001
 < 30 s met); `test.py` 7/7 C++ and 24/24 Python; `--install` loads the DLL in `explorer.exe`
@@ -15,21 +17,25 @@ not installed locally; the scripts use nothing newer than 3.9.
 
 ## Done in the last session
 
-- T024: `docs/compatibility.md` in the contract format: `## Windows` (File Explorer: process
-  `explorer.exe`, class `CabinetWClass`, `to do`; System Properties: module `sysdm.cpl`,
-  `native`) and `## Shell surfaces (always native)` with the eight R9 rows.
-- T025: `tools/build.py` parses the two tables (`parse_compatibility`, `builtin_rules_text`,
-  `write_builtin_rules`). `generate()` writes `build/gen/builtin_rules.inc` first when the repo
-  has `docs/compatibility.md` (the file is rewritten only when its bytes change);
-  `tools/test.py` writes it before compiling. `src/compat/rules.cpp` includes it as
-  `../../build/gen/builtin_rules.inc` inside a `constexpr BuiltInRow kBuiltInRows[]`
-  initializer, so the same relative include works in the amalgamation and in the tests.
-  Non-ASCII characters are written as `\uXXXX` escapes.
-- T026: `src/compat/rules.h/.cpp` (PURE). T027: `src/settings/overrides.h/.cpp` (PURE).
-  `src/main.cpp` now includes both modules (nothing calls them yet; T028 and T030 wire them).
-- Results: `tools/test.py` 56/56 C++ and 43/43 Python; `classify` averages about 1 µs per
-  call with 210 rules (SC-004 < 1 ms); `build.py --check --compile` identical and compiles
-  with no warnings.
+- T028: `src/settings/settings.h/.cpp`: `settings::Load() → Settings { RuleSet rules; bool
+  diagnosticMode; }`. Built-ins + valid overrides, version from a process-wide counter (each
+  `Load` is newer). Logs `override <i> ignored: <reason>: "<text>"` and
+  `override <i> has no effect: shell surface` with `log::Warn` (area `settings`).
+- T029: `src/compat/identity.h/.cpp`: `ReadIdentity(HWND)` (in-process or cross-process per
+  R7; lower-cased file names; class via `GetClassNameW`; template `NotADialog` unless the
+  class is `#32770`, then `Unknown`); `failed` only for an invalid window. `TopLevelOf(HWND)`
+  = `GetAncestor(GA_ROOT)`. Throws only `std::bad_alloc`.
+- T030: `src/compat/engine.h/.cpp` per the contract: `Classify(HWND)`, `LevelOf`,
+  `SubscribeLevelChanged`, `Unsubscribe`, plus `SetRuleSet(RuleSet)` and `ResetEngine()` for
+  `main.cpp`. Not wired yet (T031). `ListenerList::Clear()` added for `ResetEngine` (+ test).
+- T031: `src/main.cpp` `ApplySettings(when)`: `settings::Load()`, `log::SetVerbose(diagnosticMode)`,
+  one `log::Info` line `settings` `loaded|changed: N built-in rules, M overrides, diagnostic
+  mode on|off`, then `compat::SetRuleSet`. Called from `Wh_ModInit` and
+  `Wh_ModSettingsChanged`; an exception logs `log::Warn` and leaves the engine's rule set
+  unchanged (before the first success every window is `Native`). `Wh_ModUninit` calls
+  `compat::ResetEngine()`. Counts use `%u` with a cast (msvcrt's `_vsnwprintf` may not know `z`).
+- Results: `tools/test.py` 57/57 C++ and 43/43 Python; `build.py --check --compile`
+  identical and compiles with no warnings. Nothing ran live yet.
 
 ## Decisions
 
@@ -47,6 +53,17 @@ not installed locally; the scripts use nothing newer than 3.9.
   (`EqualsIgnoreCase` in `rules.h`), so the pure code needs no locale or Windows API. Process
   and module names are read lower-cased (T029), so this only matters for typed non-ASCII
   values. Revisit if a real window needs Unicode folding.
+- Engine (T030): returns `WindowClassification { level, ownLevel, reason, ruleSource,
+  ruleOrigin }` (a copy; rules.h's `Classification` points into the rule set). Identities are
+  read **outside** the lock (module names take the loader lock); the cache entry keeps the
+  window's and top-level's identities so `SetRuleSet` re-classifies without calling Windows
+  under the lock (only `IsWindow` for the sweep). Failures (invalid window, unreadable
+  top-level, exception) are not cached and log one `log::Warn` each. Before the first
+  `SetRuleSet` every window is `Native`/`Default`. If `SetRuleSet` runs out of memory, the
+  cache is cleared and listeners are not told. Contract updated.
+- Overrides array (T028): Windhawk returns "" for an empty item and past the end, so reading
+  stops after 16 empty results in a row (a blank line between entries does not hide the rest).
+  Contract settings.md and T028 updated.
 - Tokens read from WinRT `UISettings` (accent shades, app mode, text scale) (R11).
 - Diagnostic: single instance via mutex, 50 ms polling, click-through D2D layered overlay,
   copy shortcut Ctrl+Alt+Shift+C (fixed) (R14).
@@ -130,5 +147,6 @@ left to right, then `missing level`, then `no identity field`.
 
 ## Next step
 
-1. T028 (`settings.h/.cpp`), T029 (`identity.h/.cpp`), T030 (`engine.h/.cpp`), then the rest
-   of US2 in tasks.md.
+1. Optional live check: `build.py --install`, then Windhawk's log shows the
+   `[settings] loaded: …` line; edit an override and see `changed: …`.
+2. T032 spike (own branch `spike/20261112-dialog-capture`), then T033, T034.

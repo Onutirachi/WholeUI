@@ -11,15 +11,18 @@ namespace wholeui::compat {
 
 enum class Level : uint8_t { Native, Visual, Full };
 
-struct Classification {
+// rules.h already has the pure Classification (with a Rule pointer into the rule set);
+// the engine returns a copy that stays valid after the rule set is replaced.
+struct WindowClassification {
     Level level;            // effective level
     Level ownLevel;         // before top-level / page caps
     Reason reason;          // Default, Rule, Locked, CappedByTopLevel, LoweredByPage, Failure
+    RuleSource ruleSource;  // meaningful only when ruleOrigin is not empty
     std::wstring ruleOrigin;// empty when no rule
 };
 
 // Safe from any thread. Never throws. Any failure yields Level::Native (FR-018).
-Classification Classify(HWND hwnd);
+WindowClassification Classify(HWND hwnd);
 Level LevelOf(HWND hwnd);   // Classify(hwnd).level
 
 // Called after a cached window's effective level changes (settings edited, late page).
@@ -30,6 +33,13 @@ SubscriptionId SubscribeLevelChanged(LevelChangedFn fn, void* context);
 void Unsubscribe(SubscriptionId id);
 
 }
+```
+
+Used by `src/main.cpp` only (not by later specs):
+
+```cpp
+void SetRuleSet(RuleSet rules);  // swap, re-classify cached windows, notify changes
+void ResetEngine();              // unload: drop the rule set, cache and listeners
 ```
 
 Rules for callers:

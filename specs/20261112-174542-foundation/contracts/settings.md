@@ -26,8 +26,10 @@ The settings block in the generated mod (Windhawk YAML). English with pt-BR vari
     Ctrl+Alt+Shift+C copia.
 ```
 
-The code reads `overrides[i]` with `Wh_GetStringSetting` until an empty result past the last
-item, and `diagnosticMode` with `Wh_GetIntSetting`.
+The code reads `overrides[i]` with `Wh_GetStringSetting` and `diagnosticMode` with
+`Wh_GetIntSetting`. Windhawk returns an empty string both for an empty item and for an index
+past the end, so reading stops after 16 empty results in a row: an empty line between
+entries does not hide the entries after it.
 
 ## Override syntax
 
