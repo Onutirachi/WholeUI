@@ -253,6 +253,59 @@ window creation and stack inspection; heavier and less stable); window titles (f
   shell extension page and confirm that the page's module is listed before the sheet is shown,
   and that a dialog from `shell32.dll` gets its template ID.
 
+**Spike findings** (T032, 2026-11-13, branch `spike/20261112-dialog-capture`, Windows 11
+build 26300, comctl32 6.0.26100.9711). The spike hooked the functions above plus
+`kernelbase` `FindResourceW` / `FindResourceExW`, and logged only. Cases: Run dialog; Properties
+of a WinRAR self-extracting `.exe` (third-party page from `rarext.dll`) and of a signed `.exe`;
+Properties of drive C: (Quota page from `dskquoui.dll`); Folder Options.
+
+1. **Pages are known before the sheet window exists.** In every sheet, `shell32.dll` (or
+   `explorerframe.dll` for Folder Options) creates every page through
+   `CreatePropertySheetPageW` and then calls `PropertySheetW` with **handles** (never inline
+   pages, never `PSH_MODELESS`). The header listed all pages, with module and template, before
+   the sheet's `#32770` was created, and that window is created without `WS_VISIBLE`. The
+   `rarext.dll` page was listed with template `"EXTARCINFODLG"` (a resource name, which the
+   contract already allows).
+2. **No dialog in these cases went through the non-indirect functions.** The Run dialog
+   (`shell32.dll`) calls `DialogBoxIndirectParamW` with a template copied to private memory, so
+   neither the call arguments nor a reverse search of the module's resources can name it.
+   Property sheets do the same: the sheet frame is a `CreateDialogIndirectParamW` with
+   `HINSTANCE` = `comctl32.dll` (resource `#1006`), and each page window is a
+   `CreateDialogIndirectParamW` from `comctl32.dll` with the page's `HINSTANCE` and a copied
+   template. As designed, template IDs would be "unknown" for every dialog observed.
+3. **The template ID is recoverable from the resource lookup.** Right before each indirect
+   call, the same thread calls `FindResourceExW(module, RT_DIALOG, name)` with `module` equal to
+   the `HINSTANCE` later passed to the dialog function (Run: `shell32.dll #1003`; sheet frame:
+   `comctl32.dll #1006`; pages: their own IDs). Other lookups can come in between (comctl32
+   looks up every page's template while building the sheet), so the match must take the most
+   recent lookup on the thread **for the same module**, not simply the last one.
+4. **Page windows are created when their tab is first selected**, each through the exported
+   `CreateDialogIndirectParamW` (so our hook sees it) with the sheet frame as parent. Every page
+   window matched a page listed in the header; no page was added later in these cases.
+5. **The page's module is its `HINSTANCE`, not the code that created it**: `cryptext.dll`
+   creates the Digital Signatures page with `HINSTANCE` = `CRYPTUI.dll`. Rules for that page
+   must name `cryptui.dll`. This matches R7 (`GWLP_HINSTANCE`).
+6. **Each Properties sheet runs modally on its own thread**; the CBT hook "for the duration of
+   the call" therefore lasts while the sheet is open, on that thread only.
+7. **comctl32 may not be loaded at `Wh_ModInit`**: short-lived `explorer.exe` processes (the
+   one started by `explorer.exe <folder>`, which hands off and exits) loaded the mod before
+   `comctl32.dll`. In the main `explorer.exe` only the v6 `comctl32.dll` was loaded.
+
+**Revision** (approved by the maintainer on 2026-11-13; it replaces the bullets of the decision above where they differ, and T033 follows it):
+
+- Add hooks on `kernelbase` `FindResourceExW` and `FindResourceW`: when the type is
+  `RT_DIALOG` and the call succeeds, remember `{module, name}` in a small thread-local list
+  (last 16 lookups). Cost outside dialogs: one comparison per call.
+- In the four `user32` dialog hooks, the template is the call's argument for the non-indirect
+  variants; for the indirect variants it is the most recent remembered lookup whose module
+  equals the call's `HINSTANCE`, or "unknown" if there is none. The list is cleared when the
+  outermost dialog call on the thread returns.
+- The sheet window is the **first** `#32770` created on the thread during `PropertySheetW`,
+  whatever hooked call it is nested in (it is created inside `CreateDialogIndirectParamW`).
+- If `comctl32.dll` is not loaded at `Wh_ModInit`, hook `PropertySheetW` and
+  `CreatePropertySheetPageW` when it loads (through Windhawk's module-load notification or a
+  `LoadLibraryExW` hook, chosen in T033); only the instance(s) actually loaded are hooked.
+
 **Alternatives**: wrapping the dialog procedure to catch `WM_INITDIALOG` (changes the window's
 `DWLP_DLGPROC`, even if briefly; rejected by FR-008); a global `SetWinEventHook` for object
 creation (asynchronous, arrives after the window is shown).

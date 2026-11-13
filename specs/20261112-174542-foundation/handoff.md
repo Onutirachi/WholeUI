@@ -1,6 +1,6 @@
 # Handoff: Foundation
 
-**Updated**: 2026-11-13 (US2: T028–T031) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
+**Updated**: 2026-11-13 (US2: T032 spike) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
 
 ## State
 
@@ -145,8 +145,24 @@ left to right, then `missing level`, then `no identity field`.
   newline); `write_builtin_rules(repo) → Path` writes `build/gen/builtin_rules.inc` from
   `docs/compatibility.md`.
 
+## T032 spike (2026-11-13)
+
+Done on `spike/20261112-dialog-capture` (`src/spike/dialog_capture.cpp`, logging only; never
+merged). Findings and a **proposed revision of R8** are in research.md R8 "Spike findings".
+Short version: pages and their modules are known from `PropertySheetW`'s header before the
+sheet window exists (confirmed, including the third-party `rarext.dll` page); but every dialog
+observed (Run, sheet frames, pages) is created through the **indirect** functions with a
+copied template, so the template ID must come from a thread-local record of
+`FindResourceExW(RT_DIALOG)` lookups matched by module. The maintainer approved the revision;
+T033 in tasks.md is rewritten to follow it. Spike committed on its branch (`804a72b`).
+
+How to watch the mod's log without the Windhawk UI: `OutputDebugString` listener (DBWIN
+protocol); Windhawk writes `[WH] [local@wholeui] …` lines there. `windhawk-cli mod
+disable/enable` does not reload the DLL; `build.py --install` or a settings change does.
+The live check of `[settings] loaded/changed` lines passed (diagnostic mode is now on in the
+local install).
+
 ## Next step
 
-1. Optional live check: `build.py --install`, then Windhawk's log shows the
-   `[settings] loaded: …` line; edit an override and see `changed: …`.
-2. T032 spike (own branch `spike/20261112-dialog-capture`), then T033, T034.
+1. T033 (dialog hooks per R8 "Revision"), then T034. The foundation build is reinstalled in
+   Windhawk (spike build replaced).
