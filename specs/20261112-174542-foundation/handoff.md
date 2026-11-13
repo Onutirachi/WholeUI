@@ -1,32 +1,35 @@
 # Handoff: Foundation
 
-**Updated**: 2026-11-12 (US1, awaiting validation) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
+**Updated**: 2026-11-13 (US2: T020–T027) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
 
 ## State
 
-Spec, plan, tasks, Phase 1 and Phase 2 validated and committed. US1 T012–T018 implemented
-and checked locally, **not committed** (awaiting the maintainer's validation). T019 is partly
-done: the parts that need the maintainer are listed under "Next step".
+Spec, plan, tasks, Phase 1, Phase 2 and US1 (T012–T019) done and committed. The branch is on
+GitHub with draft pull request #1; CI ("Build and test") passes in about 35 s. US2 tests and
+pure logic (T020–T027) are done, validated and committed (not pushed yet).
+
+US1 results kept for reference: `build.py` writes in 3 ms, `--compile` about 1.2 s (SC-001
+< 30 s met); `test.py` 7/7 C++ and 24/24 Python; `--install` loads the DLL in `explorer.exe`
+only and Windhawk's log shows `[core] WholeUI 0.1.0 loaded`. Python 3.12 (CI's version) is
+not installed locally; the scripts use nothing newer than 3.9.
 
 ## Done in the last session
 
-- `tests/tools/test_build.py` (24 tests) with fixtures in `tests/tools/fixtures/amalgamation/`;
-  `tools/build.py` (generate, `--check`, `--compile`, `--install`); `tools/test.py`;
-  `.github/workflows/ci.yml`. Implementation notes in research.md R4.
-- `--compile` appends the header's `@compilerOptions` (as Windhawk does); `mod_libraries`
-  removed from `tools/toolchain.json` (tasks T003/T015, plan, research R1 updated).
-- Local run (T019): `build.py` writes the file in 3 ms; `--check` identical; `--compile` in
-  about 1.2 s with both Windhawk's compiler and the pinned one (`WINDHAWK_ROOT` pointed
-  elsewhere); `test.py`: 7/7 C++ and 24/24 Python, with both compilers. SC-001 (< 30 s) met.
-- A deliberate error in `src/core/log.cpp` line 20 compiled to
-  `src/core/log.cpp:20:56: error: expected expression` (pinned toolchain).
-- `--install`: installed as `local@wholeui` 0.1.0, enabled; the DLL is loaded in
-  `explorer.exe` only (checked through process modules, non-elevated processes).
-- Windhawk's log (mod logging on) shows
-  `explorer.exe [WH] [local@wholeui] [200:Write]: [core] WholeUI 0.1.0 loaded`; the
-  `[line:function]` prefix is a line of the generated file.
-- `@author` changed back to `Onutirachi` (maintainer's choice).
-- Python 3.12 (CI's version) is not installed locally; the scripts use nothing newer than 3.9.
+- T024: `docs/compatibility.md` in the contract format: `## Windows` (File Explorer: process
+  `explorer.exe`, class `CabinetWClass`, `to do`; System Properties: module `sysdm.cpl`,
+  `native`) and `## Shell surfaces (always native)` with the eight R9 rows.
+- T025: `tools/build.py` parses the two tables (`parse_compatibility`, `builtin_rules_text`,
+  `write_builtin_rules`). `generate()` writes `build/gen/builtin_rules.inc` first when the repo
+  has `docs/compatibility.md` (the file is rewritten only when its bytes change);
+  `tools/test.py` writes it before compiling. `src/compat/rules.cpp` includes it as
+  `../../build/gen/builtin_rules.inc` inside a `constexpr BuiltInRow kBuiltInRows[]`
+  initializer, so the same relative include works in the amalgamation and in the tests.
+  Non-ASCII characters are written as `\uXXXX` escapes.
+- T026: `src/compat/rules.h/.cpp` (PURE). T027: `src/settings/overrides.h/.cpp` (PURE).
+  `src/main.cpp` now includes both modules (nothing calls them yet; T028 and T030 wire them).
+- Results: `tools/test.py` 56/56 C++ and 43/43 Python; `classify` averages about 1 µs per
+  call with 210 rules (SC-004 < 1 ms); `build.py --check --compile` identical and compiles
+  with no warnings.
 
 ## Decisions
 
@@ -40,6 +43,10 @@ done: the parts that need the maintainer are listed under "Next step".
   and property sheet pages (R6, R8). Built-in rules generated from `docs/compatibility.md`,
   which gets Class/Template columns and a locked "Shell surfaces" table (R9).
 - Overrides are strings: `process=…; module=…; class=…; template=…; level=…` (R10).
+- Case-insensitive matching (rules and override field names) folds **ASCII letters only**
+  (`EqualsIgnoreCase` in `rules.h`), so the pure code needs no locale or Windows API. Process
+  and module names are read lower-cased (T029), so this only matters for typed non-ASCII
+  values. Revisit if a real window needs Unicode folding.
 - Tokens read from WinRT `UISettings` (accent shades, app mode, text scale) (R11).
 - Diagnostic: single instance via mutex, 50 ms polling, click-through D2D layered overlay,
   copy shortcut Ctrl+Alt+Shift+C (fixed) (R14).
@@ -55,13 +62,73 @@ done: the parts that need the maintainer are listed under "Next step".
 - Still to verify: `$name:pt-BR` honored in settings (R3, acceptance step 10); property
   sheet page capture on a live system (R8, spike branch).
 
+## US2 APIs (tests and implementation, T020–T027)
+
+Tests and implementation go into the same commit (the tests do not compile without it).
+
+- `tests/unit/rules_test.cpp` (T020, T021): 28 tests.
+- `tests/unit/overrides_test.cpp` (T022): 21 tests.
+- `tests/unit/compat_print.h`: `operator<<` for `Level` and `Reason`, shared by both test
+  files (one definition, no ODR clash).
+- `tests/tools/test_build.py` (T023): `CompatibilityDocTest`, `CompatibilityDocErrorTest`,
+  `BuiltInRulesIncludeTest`, and `RealSourcesTest.test_repository_compatibility_doc_parses`
+  (passes after T024); fixtures in `tests/tools/fixtures/compat/`.
+
+### `src/compat/rules.h` API fixed by the tests (T026, namespace `wholeui::compat`)
+
+
+- `Level`, `Reason` (`Default`, `Rule`, `Locked`, `CappedByTopLevel`, `LoweredByPage`,
+  `Failure`), `RuleSource` (`BuiltIn`, `Override`), all `uint8_t` enums.
+- `Field { bool known; std::wstring value; static Of(v); static Unknown(); }`;
+  `TemplateField { Kind kind (Value, Unknown, NotADialog); std::wstring value; static Of(v);
+  Unknown(); NotADialog(); }`.
+- `WindowIdentity { Field process, module, windowClass; TemplateField templateId; bool failed; }`
+  — `failed` is step 1 of the resolution order (a read that failed abnormally).
+- `Rule { std::optional<std::wstring> process, module, windowClass, templateId; Level level;
+  RuleSource source; bool locked; std::wstring origin; }`;
+  `RuleSet { std::vector<Rule> builtIns, overrides; uint64_t version; }`.
+- `Classification { Level level, ownLevel; Reason reason; const Rule* rule; }`.
+- `Classify(const WindowIdentity& window, const WindowIdentity* topLevel,
+  std::span<const WindowIdentity> pages, const RuleSet&) noexcept` — `topLevel == nullptr`
+  means the window is itself top-level; `pages` are the pages of the top-level sheet. Named
+  `Classify` (PascalCase like the rest of the code) instead of `classify` in data-model.md;
+  T054 records it in the contract.
+- `const std::vector<Rule>& BuiltInRules()`.
+
+Behaviour choices the test encodes (all fail-safe, within data-model.md): a failed top-level
+or page makes the window `Native`/`Failure`; a child of a locked top-level is
+`Native`/`Locked`; a child's cap uses the top-level's effective level (after page lowering);
+a page's level is its own level from step 3.
+
+### `src/settings/overrides.h` API fixed by the tests (T027, namespace `wholeui::settings`)
+
+- `OverrideError { int index; std::wstring text; std::wstring reason; }`;
+  `OverrideResult { std::optional<compat::Rule> rule; std::optional<OverrideError> error; }`
+  — both empty means skipped (empty or whitespace-only entry).
+- `OverrideResult ParseOverride(int index, std::wstring_view text)`.
+- `bool NamesShellSurface(const compat::Rule& override, std::span<const compat::Rule> builtIns)`
+  — true when the override names every field of a locked rule with equal values
+  (case-insensitive); `class=Shell_TrayWnd` alone is not flagged (it may match another
+  process).
+
+Parser choices the tests encode (within contracts/settings.md): field names are
+case-insensitive; the rule's `origin` and the error's `text` are the entry with outer
+whitespace trimmed; only the first `=` splits name and value; empty segments (a trailing `;`)
+are ignored; `/`, `\` or `:` in `process` or `module` is a path; field errors are reported
+left to right, then `missing level`, then `no identity field`.
+
+### `tools/build.py` API fixed by the tests (T025)
+
+- `parse_compatibility(path) → list` of objects with `origin`, `process`, `module`,
+  `window_class`, `template` (`None` when not named), `level` (`"native"`, `"visual"`,
+  `"full"`; `to do` → `"native"`) and `locked`; document order. Errors are `BuildError`
+  with `<file>:<line>:` and the reason (`no identity field`, `unknown level`, column count,
+  header); a missing table names its heading.
+- `builtin_rules_text(path) → str` (wide C++ string literals, escaped, LF, one final
+  newline); `write_builtin_rules(repo) → Path` writes `build/gen/builtin_rules.inc` from
+  `docs/compatibility.md`.
+
 ## Next step
 
-Finish T019 with the maintainer:
-
-1. Validate and commit US1 (T012–T018).
-2. Push the branch, open a pull request, check that CI passes; add branch protection on
-   `main` requiring the "Build and test" job.
-3. Throwaway pull request with a deliberate compile error: CI fails naming the source file.
-
-Then US2 (T020–T034).
+1. T028 (`settings.h/.cpp`), T029 (`identity.h/.cpp`), T030 (`engine.h/.cpp`), then the rest
+   of US2 in tasks.md.

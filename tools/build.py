@@ -5,6 +5,10 @@ readme and settings blocks from src/mod/, then the amalgamation of src/main.cpp.
 `#include "..."` of a project file is replaced by that file the first time it is seen and by
 a one-line comment after that; `#include <...>` lines are kept. Python standard library only.
 
+The built-in compatibility rules come from the tables in docs/compatibility.md: they are
+written to build/gen/builtin_rules.inc before the amalgamation, and src/compat/rules.cpp
+includes that file (research R9).
+
 Markers in the generated file let compiler diagnostics be mapped back to the sources:
 
     // ---- src/core/log.cpp ----      the next line is line 1 of src/core/log.cpp
@@ -38,6 +42,8 @@ REPO = Path(__file__).resolve().parent.parent
 CONFIG = REPO / "tools" / "toolchain.json"
 OUTPUT = Path("build") / "wholeui.wh.cpp"
 DLL = Path("build") / "wholeui.dll"
+COMPATIBILITY_DOC = Path("docs") / "compatibility.md"
+BUILTIN_RULES = Path("build") / "gen" / "builtin_rules.inc"
 
 NOTICE = "// Generated from src/ by tools/build.py. Do not edit: change the sources and rebuild."
 MOD_BEGIN = "// ==WindhawkMod=="
@@ -139,8 +145,14 @@ def _inline(repo: Path, path: Path, seen: set[str], out: list[str]) -> None:
 
 
 def generate(repo: Path = REPO) -> str:
-    """The text of the mod file built from `repo`/src."""
+    """The text of the mod file built from `repo`/src.
+
+    Writes build/gen/builtin_rules.inc first when `repo` has docs/compatibility.md, so the
+    sources can include it.
+    """
     read_metadata(repo)  # validates the header
+    if (repo / COMPATIBILITY_DOC).is_file():
+        write_builtin_rules(repo)
     mod = repo / "src" / "mod"
     out = [NOTICE, ""]
     out += _header_lines(repo)
@@ -156,6 +168,165 @@ def generate(repo: Path = REPO) -> str:
 
 def encode(text: str) -> bytes:
     return text.encode("utf-8")
+
+
+# ---------------------------------------------------------------------------------------------
+# Built-in compatibility rules (research R9, contracts/compatibility-doc.md)
+
+WINDOWS_HEADING = "## Windows"
+SHELL_HEADING = "## Shell surfaces (always native)"
+WINDOWS_COLUMNS = ["Window", "Process", "Module", "Class", "Template", "Level", "Windows build",
+                   "Validated"]
+SHELL_COLUMNS = ["Surface", "Process", "Class"]
+LEVELS = {"native": "native", "visual": "visual", "full": "full", "to do": "native"}
+NOT_NAMED = {"—", "-", ""}
+CPP_LEVELS = {"native": "Level::Native", "visual": "Level::Visual", "full": "Level::Full"}
+
+
+@dataclass
+class CompatRule:
+    """One row of a compatibility table; None means the field is not named."""
+    origin: str
+    process: str | None
+    module: str | None
+    window_class: str | None
+    template: str | None
+    level: str
+    locked: bool
+    line: int
+
+
+def _display(path: Path) -> str:
+    try:
+        return path.resolve().relative_to(REPO).as_posix()
+    except ValueError:
+        return str(path)
+
+
+def _cells(line: str) -> list[str] | None:
+    """The cells of a table row, or None when the line is not a table row."""
+    text = line.strip()
+    if not text.startswith("|"):
+        return None
+    if not text.endswith("|") or len(text) < 2:
+        return []
+    return [cell.strip() for cell in text[1:-1].split("|")]
+
+
+def _value(cell: str) -> str | None:
+    if len(cell) >= 2 and cell.startswith("`") and cell.endswith("`"):
+        cell = cell[1:-1].strip()
+    return None if cell in NOT_NAMED else cell
+
+
+def _table(lines: list[str], heading: str, columns: list[str],
+           where: str) -> list[tuple[int, list[str]]]:
+    """The data rows (line number, cells) of the table under `heading`."""
+    try:
+        start = lines.index(heading)
+    except ValueError:
+        raise BuildError(f"{where}: missing table under '{heading}'") from None
+    index = start + 1
+    while index < len(lines) and _cells(lines[index]) is None:
+        if lines[index].startswith("#"):
+            break
+        index += 1
+    if index >= len(lines) or _cells(lines[index]) is None:
+        raise BuildError(f"{where}:{start + 1}: no table under '{heading}'")
+    expected = "| " + " | ".join(columns) + " |"
+    if _cells(lines[index]) != columns:
+        raise BuildError(f"{where}:{index + 1}: table header must be {expected}")
+    separator = _cells(lines[index + 1]) if index + 1 < len(lines) else None
+    if separator is None or len(separator) != len(columns) or any(
+            not re.fullmatch(r":?-+:?", cell) for cell in separator):
+        raise BuildError(f"{where}:{index + 2}: separator row must follow the header {expected}")
+    rows = []
+    index += 2
+    while index < len(lines):
+        cells = _cells(lines[index])
+        if cells is None:
+            break
+        if len(cells) != len(columns):
+            raise BuildError(
+                f"{where}:{index + 1}: expected {len(columns)} columns, found {len(cells)}")
+        rows.append((index + 1, cells))
+        index += 1
+    return rows
+
+
+def parse_compatibility(path: Path) -> list[CompatRule]:
+    """The rules of docs/compatibility.md in document order; BuildError names the line."""
+    where = _display(path)
+    try:
+        data = path.read_bytes()
+    except OSError as error:
+        raise BuildError(f"{where}: {error.strerror}") from None
+    if data.startswith(b"\xef\xbb\xbf"):
+        data = data[3:]
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise BuildError(f"{where}: not UTF-8 ({error.reason})") from None
+    lines = [line.rstrip() for line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n")]
+
+    rules: list[CompatRule] = []
+    for number, cells in _table(lines, WINDOWS_HEADING, WINDOWS_COLUMNS, where):
+        origin, process, module, window_class, template, level = cells[:6]
+        level_key = level.strip("`").strip().lower()
+        if level_key not in LEVELS:
+            raise BuildError(f'{where}:{number}: unknown level "{level}"')
+        rules.append(CompatRule(origin, _value(process), _value(module), _value(window_class),
+                                _value(template), LEVELS[level_key], False, number))
+    for number, cells in _table(lines, SHELL_HEADING, SHELL_COLUMNS, where):
+        origin, process, window_class = cells
+        rules.append(CompatRule(origin, _value(process), None, _value(window_class), None,
+                                "native", True, number))
+    for rule in rules:
+        if not rule.origin:
+            raise BuildError(f"{where}:{rule.line}: no window name")
+        if not (rule.process or rule.module or rule.window_class or rule.template):
+            raise BuildError(f"{where}:{rule.line}: no identity field (name a process, module, "
+                             "class or template)")
+    rules.sort(key=lambda rule: rule.line)
+    return rules
+
+
+def _cpp_string(value: str | None) -> str:
+    if value is None:
+        return "nullptr"
+    out = []
+    for char in value:
+        code = ord(char)
+        if char in '"\\':
+            out.append("\\" + char)
+        elif 0x20 <= code < 0x7F:
+            out.append(char)
+        elif code <= 0xFFFF:
+            out.append(f"\\u{code:04X}")
+        else:
+            out.append(f"\\U{code:08X}")
+    return 'L"' + "".join(out) + '"'
+
+
+def builtin_rules_text(path: Path) -> str:
+    """The C++ initializers for the rules in `path`: one per row, in document order."""
+    lines = ["// Generated by tools/build.py from the compatibility list. Do not edit.",
+             "// { origin, process, module, class, template, level, locked }"]
+    for rule in parse_compatibility(path):
+        fields = [rule.origin, rule.process, rule.module, rule.window_class, rule.template]
+        lines.append("{" + ", ".join(_cpp_string(field) for field in fields) +
+                     f", {CPP_LEVELS[rule.level]}, {'true' if rule.locked else 'false'}}},")
+    return "\n".join(lines) + "\n"
+
+
+def write_builtin_rules(repo: Path = REPO) -> Path:
+    """Writes build/gen/builtin_rules.inc from docs/compatibility.md (unchanged bytes are kept)."""
+    output = repo / BUILTIN_RULES
+    data = encode(builtin_rules_text(repo / COMPATIBILITY_DOC))
+    if not output.is_file() or output.read_bytes() != data:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(data)
+    return output
 
 
 def write_output(repo: Path = REPO) -> Path:

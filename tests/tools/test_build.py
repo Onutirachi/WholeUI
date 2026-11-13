@@ -241,6 +241,125 @@ class DiagnosticMappingTest(unittest.TestCase):
         )
 
 
+COMPAT = FIXTURES / "compat"
+
+
+def rule_tuple(rule) -> tuple:
+    return (rule.origin, rule.process, rule.module, rule.window_class, rule.template,
+            rule.level, rule.locked)
+
+
+class CompatibilityDocTest(unittest.TestCase):
+    """Parser of docs/compatibility.md (contracts/compatibility-doc.md, T023)."""
+
+    def setUp(self) -> None:
+        self.rules = build.parse_compatibility(COMPAT / "valid.md")
+
+    def test_rows_in_document_order(self) -> None:
+        self.assertEqual(
+            [rule.origin for rule in self.rules],
+            ["File Explorer", "System Properties", "Run dialog", 'Say "hi" \\ back',
+             "Taskbar", "Desktop"],
+        )
+
+    def test_windows_rows(self) -> None:
+        self.assertEqual(rule_tuple(self.rules[0]),
+                         ("File Explorer", "explorer.exe", None, "CabinetWClass", None,
+                          "native", False))
+        self.assertEqual(rule_tuple(self.rules[2]),
+                         ("Run dialog", "explorer.exe", "shell32.dll", "#32770", "1003",
+                          "visual", False))
+        self.assertEqual(self.rules[3].level, "full")
+
+    def test_em_dash_and_hyphen_mean_not_named(self) -> None:
+        explorer, system = self.rules[0], self.rules[1]
+        self.assertIsNone(explorer.module)  # —
+        self.assertIsNone(system.process)   # -
+        self.assertIsNone(system.window_class)
+        self.assertIsNone(system.template)
+
+    def test_backticks_stripped(self) -> None:
+        self.assertEqual(self.rules[1].module, "sysdm.cpl")
+        self.assertEqual(self.rules[2].process, "explorer.exe")
+        self.assertEqual(self.rules[2].window_class, "#32770")
+        self.assertEqual(self.rules[5].window_class, "Progman")
+
+    def test_to_do_ships_as_native(self) -> None:
+        self.assertEqual(self.rules[0].level, "native")
+        self.assertFalse(self.rules[0].locked)
+
+    def test_shell_rows_are_locked_native(self) -> None:
+        self.assertEqual(rule_tuple(self.rules[4]),
+                         ("Taskbar", "explorer.exe", None, "Shell_TrayWnd", None, "native", True))
+        self.assertEqual(rule_tuple(self.rules[5]),
+                         ("Desktop", "explorer.exe", None, "Progman", None, "native", True))
+
+    def test_other_tables_ignored(self) -> None:
+        self.assertNotIn("is", [rule.origin for rule in self.rules])
+
+
+class CompatibilityDocErrorTest(unittest.TestCase):
+    def assertDocError(self, name: str, *fragments: str) -> None:
+        with self.assertRaises(build.BuildError) as caught:
+            build.parse_compatibility(COMPAT / name)
+        for fragment in fragments:
+            self.assertIn(fragment, str(caught.exception))
+
+    def test_row_without_identity_field(self) -> None:
+        self.assertDocError("no_identity.md", "no_identity.md:6:", "no identity field")
+
+    def test_shell_row_without_identity_field(self) -> None:
+        self.assertDocError("shell_no_identity.md", "shell_no_identity.md:11:",
+                            "no identity field")
+
+    def test_unknown_level(self) -> None:
+        self.assertDocError("unknown_level.md", "unknown_level.md:5:", "unknown level", "dark")
+
+    def test_wrong_column_count(self) -> None:
+        self.assertDocError("column_count.md", "column_count.md:12:", "columns")
+
+    def test_wrong_header(self) -> None:
+        self.assertDocError("wrong_header.md", "wrong_header.md:3:", "header")
+
+    def test_missing_table(self) -> None:
+        self.assertDocError("missing_shell.md", "## Shell surfaces (always native)")
+
+
+class BuiltInRulesIncludeTest(unittest.TestCase):
+    """build/gen/builtin_rules.inc generated from the parsed rules."""
+
+    def setUp(self) -> None:
+        self.text = build.builtin_rules_text(COMPAT / "valid.md")
+
+    def test_identical_across_runs(self) -> None:
+        again = build.builtin_rules_text(COMPAT / "valid.md")
+        self.assertEqual(build.encode(self.text), build.encode(again))
+
+    def test_one_entry_per_row_in_document_order(self) -> None:
+        positions = [self.text.find(f'L"{origin}"')
+                     for origin in ("File Explorer", "System Properties", "Run dialog",
+                                    "Taskbar", "Desktop")]
+        self.assertNotIn(-1, positions)
+        self.assertEqual(positions, sorted(positions))
+
+    def test_strings_escaped_for_cpp(self) -> None:
+        self.assertIn('L"Say \\"hi\\" \\\\ back"', self.text)
+
+    def test_lf_endings_and_single_final_newline(self) -> None:
+        self.assertNotIn("\r", self.text)
+        self.assertTrue(self.text.endswith("\n"))
+        self.assertFalse(self.text.endswith("\n\n"))
+
+    def test_write_to_build_gen(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "docs").mkdir()
+            shutil.copy(COMPAT / "valid.md", root / "docs" / "compatibility.md")
+            path = build.write_builtin_rules(root)
+            self.assertEqual(path, root / "build" / "gen" / "builtin_rules.inc")
+            self.assertEqual(path.read_bytes(), build.encode(self.text))
+
+
 class RealSourcesTest(unittest.TestCase):
     """The repository's own sources build (catches a broken include in src/)."""
 
@@ -248,6 +367,20 @@ class RealSourcesTest(unittest.TestCase):
         text = build.generate(REPO)
         self.assertIn("// @id              wholeui", text.split("\n"))
         self.assertIn("// ---- src/main.cpp ----", text.split("\n"))
+
+    def test_repository_compatibility_doc_parses(self) -> None:
+        rules = build.parse_compatibility(REPO / "docs" / "compatibility.md")
+        by_origin = {rule.origin: rule for rule in rules}
+        self.assertEqual(rule_tuple(by_origin["File Explorer"]),
+                         ("File Explorer", "explorer.exe", None, "CabinetWClass", None,
+                          "native", False))
+        self.assertEqual(by_origin["System Properties"].module, "sysdm.cpl")
+        shell = sorted(rule.window_class for rule in rules if rule.locked)
+        self.assertEqual(shell, sorted([
+            "Shell_TrayWnd", "Shell_SecondaryTrayWnd", "NotifyIconOverflowWindow",
+            "TopLevelWindowForOverflowXamlIsland", "XamlExplorerHostIslandWindow", "Progman",
+            "WorkerW", "Shell_InputSwitchTopLevelWindow"]))
+        self.assertTrue(all(rule.process == "explorer.exe" for rule in rules if rule.locked))
 
 
 if __name__ == "__main__":

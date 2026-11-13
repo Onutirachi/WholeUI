@@ -6,6 +6,10 @@
 #include "core/log.h"
 #include "core/log.cpp"
 #include "core/subscriptions.h"
+#include "compat/rules.h"
+#include "compat/rules.cpp"
+#include "settings/overrides.h"
+#include "settings/overrides.cpp"
 
 BOOL Wh_ModInit() {
     wholeui::log::Info(L"core", L"WholeUI %s loaded", WH_MOD_VERSION);

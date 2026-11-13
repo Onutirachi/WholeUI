@@ -62,6 +62,7 @@ def pure_sources() -> list[Path]:
 def run_unit_tests() -> bool:
     config = build.load_config()
     toolchain = build.find_toolchain(config)
+    build.write_builtin_rules(REPO)  # included by src/compat/rules.cpp
     sources = sorted((REPO / "tests" / "unit").glob("*.cpp")) + pure_sources()
     (REPO / EXE).parent.mkdir(parents=True, exist_ok=True)
     command = [str(toolchain.clang), *test_flags(config),
