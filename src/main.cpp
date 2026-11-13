@@ -35,9 +35,10 @@
 
 namespace {
 
-// Reads the settings and hands the new rule set to the engine. On failure (out of memory)
-// the engine keeps the rule set it has, which before the first success means every window
-// stays Native (FR-018).
+// Reads the settings, hands the new rule set to the engine and turns diagnostic mode on or
+// off (FR-020). On failure (out of memory) the engine keeps the rule set it has, which
+// before the first success means every window stays Native (FR-018), and diagnostic mode
+// keeps its current state.
 void ApplySettings(const wchar_t* when) {
     using namespace wholeui;
     try {
@@ -48,6 +49,11 @@ void ApplySettings(const wchar_t* when) {
                   static_cast<unsigned>(loaded.rules.overrides.size()),
                   loaded.diagnosticMode ? L"on" : L"off");
         compat::SetRuleSet(std::move(loaded.rules));
+        if (loaded.diagnosticMode) {
+            diagnostic::Start();
+        } else {
+            diagnostic::Stop();
+        }
     } catch (...) {
         log::Warn(L"settings", L"%s: reading settings failed: exception; rules unchanged", when);
     }
@@ -72,7 +78,9 @@ void Wh_ModSettingsChanged() {
 
 void Wh_ModUninit() {
     wholeui::compat::UninstallDialogHooks();
-    // system::Stop posts the WinRT release to the worker; worker::Stop runs it and waits.
+    // diagnostic::Stop and system::Stop post their release to the worker; worker::Stop runs
+    // them and waits (FR-029).
+    wholeui::diagnostic::Stop();
     wholeui::tokens::system::Stop();
     wholeui::worker::Stop();
     wholeui::tokens::ResetTokens();

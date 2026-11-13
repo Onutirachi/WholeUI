@@ -1,6 +1,6 @@
 # Handoff: Foundation
 
-**Updated**: 2026-11-13 (US3: T047 committed) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
+**Updated**: 2026-11-13 (US3: T048 committed) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
 
 ## State
 
@@ -461,9 +461,25 @@ post to the worker, so off/on/off ends in the last state). Not called from `main
 - Results: `build.py --check --compile` clean; `tools/test.py` 91/91 C++, 43/43 Python; the
   clean build is installed (overlay off: nothing calls `Start` yet).
 
+## T048 wiring (2026-11-13)
+
+`ApplySettings` calls `diagnostic::Start()` when `diagnosticMode` is on and
+`diagnostic::Stop()` when off, after `SetRuleSet`; a failed settings read leaves the mode as
+it was. `Wh_ModUninit`: dialog hooks off → `diagnostic::Stop` → `system::Stop` →
+`worker::Stop` → `ResetTokens` → `ResetEngine`. US3 is complete.
+
+- Live check: `windhawk-cli mod settings set local@wholeui diagnosticMode=0|1` changes the
+  setting and the mod gets `Wh_ModSettingsChanged` (no UI needed). Load with the mode on → one
+  visible `WholeUI.Diagnostic` window in one of 3 `explorer.exe`; off → none; on → one;
+  off/on/off sent back to back → none; reinstall with the mode on → the old owner let go and
+  another process took over, still one window, no `explorer.exe` restarted.
+- Results: `build.py --check --compile` clean; `tools/test.py` 91/91 C++, 43/43 Python; the
+  clean build is installed (diagnostic mode on).
+
 ## Next step
 
-1. T047 is committed (`feat: add diagnostic single instance and lifecycle`, not pushed);
-   T044–T046 and earlier US3/US4 commits are also unpushed.
-2. T048 wiring in `main.cpp` (start/stop on init and settings change by `diagnosticMode`,
-   stop at uninit before the worker), then Phase 6 (T049–T054).
+1. T048 is committed
+   (`feat: wire diagnostic mode into the mod`, not pushed). T044–T047 and earlier US3/US4
+   commits are also unpushed.
+2. Phase 6: T049 (build, tests, SC-004 timing), then T050 live acceptance with the
+   maintainer (quickstart.md steps 1–11), T051–T054.
