@@ -768,3 +768,127 @@ void StopTracking() noexcept {
 }
 
 }  // namespace wholeui::diagnostic::overlay
+
+namespace wholeui::diagnostic {
+namespace {
+
+constexpr wchar_t kMutexName[] = L"Local\\WholeUI.Diagnostic";
+constexpr UINT kRetryMs = 1000;  // an idle instance tries to take the mutex this often (R14)
+
+// Diagnostic mode state (worker thread only, so no lock).
+struct Instance {
+    bool on = false;          // Start ran and Stop has not
+    HANDLE mutex = nullptr;   // open while on; owned by the worker thread when `owner`
+    bool owner = false;       // this instance shows the overlay
+    UINT_PTR retry = 0;       // thread timer of an idle instance
+    bool openWarned = false;  // CreateMutex failure logged; cleared when it succeeds
+};
+
+Instance g_instance;
+
+void CALLBACK RetryTimer(HWND, UINT, UINT_PTR, DWORD) noexcept;
+
+void KillRetry() noexcept {
+    if (g_instance.retry != 0) {
+        KillTimer(nullptr, g_instance.retry);
+        g_instance.retry = 0;
+    }
+}
+
+void ReleaseOwnership() noexcept {
+    if (g_instance.owner) {
+        ReleaseMutex(g_instance.mutex);
+        g_instance.owner = false;
+    }
+}
+
+// Opens the mutex if needed and takes it without waiting. Returns true when this instance
+// now owns it. A previous owner that exited without releasing it (crash) leaves it abandoned;
+// taking an abandoned mutex is ownership too.
+bool TryOwn() noexcept {
+    if (g_instance.mutex == nullptr) {
+        g_instance.mutex = CreateMutexW(nullptr, FALSE, kMutexName);
+        if (g_instance.mutex == nullptr) {
+            if (!g_instance.openWarned) {
+                g_instance.openWarned = true;
+                log::Warn(L"diagnostic", L"CreateMutex failed: %lu; retrying every %u ms",
+                          GetLastError(), kRetryMs);
+            }
+            return false;
+        }
+        g_instance.openWarned = false;
+    }
+    const DWORD wait = WaitForSingleObject(g_instance.mutex, 0);
+    if (wait == WAIT_ABANDONED) {
+        log::Verbose(L"diagnostic", L"previous overlay owner exited without releasing it");
+    }
+    g_instance.owner = wait == WAIT_OBJECT_0 || wait == WAIT_ABANDONED;
+    return g_instance.owner;
+}
+
+// Takes the mutex and starts tracking, or stays idle with the retry timer running.
+void Acquire() noexcept {
+    if (TryOwn()) {
+        if (overlay::StartTracking()) {
+            KillRetry();
+            log::Info(L"diagnostic", L"overlay shown by this process (pid %lu)",
+                      GetCurrentProcessId());
+            return;
+        }
+        // Logged by StartTracking. Let another instance try; this one retries too.
+        ReleaseOwnership();
+    }
+    if (g_instance.retry == 0) {
+        g_instance.retry = SetTimer(nullptr, 0, kRetryMs, RetryTimer);
+        if (g_instance.retry == 0) {
+            log::Warn(L"diagnostic", L"SetTimer failed: %lu; overlay stays off in this process",
+                      GetLastError());
+            return;
+        }
+        log::Verbose(L"diagnostic", L"another process shows the overlay; waiting");
+    }
+}
+
+void CALLBACK RetryTimer(HWND, UINT, UINT_PTR, DWORD) noexcept {
+    if (g_instance.on && !g_instance.owner) {
+        Acquire();
+    }
+}
+
+void StartOnWorker() noexcept {
+    if (g_instance.on) {
+        return;
+    }
+    g_instance.on = true;
+    Acquire();
+}
+
+void StopOnWorker() noexcept {
+    if (!g_instance.on) {
+        return;
+    }
+    const bool wasOwner = g_instance.owner;
+    KillRetry();
+    overlay::StopTracking();
+    overlay::Destroy();
+    ReleaseOwnership();
+    if (g_instance.mutex != nullptr) {
+        CloseHandle(g_instance.mutex);
+    }
+    g_instance = Instance{};
+    if (wasOwner) {
+        log::Info(L"diagnostic", L"overlay removed");
+    }
+}
+
+}  // namespace
+
+bool Start() noexcept {
+    return worker::Post([] { StartOnWorker(); });
+}
+
+void Stop() noexcept {
+    worker::Post([] { StopOnWorker(); });
+}
+
+}  // namespace wholeui::diagnostic

@@ -1,6 +1,6 @@
 # Handoff: Foundation
 
-**Updated**: 2026-11-13 (US3: T046 done, not committed) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
+**Updated**: 2026-11-13 (US3: T047 committed) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
 
 ## State
 
@@ -430,9 +430,40 @@ updated).
 - Results: `build.py --check --compile` clean; `tools/test.py` 91/91 C++, 43/43 Python; the
   clean build is installed.
 
+## T047 single instance and lifecycle (2026-11-13)
+
+In `src/diagnostic/overlay.h` / `overlay.cpp`, namespace `wholeui::diagnostic` (outside
+`overlay`): `bool Start()` and `void Stop()`, `noexcept`, **safe from any thread** (they
+post to the worker, so off/on/off ends in the last state). Not called from `main.cpp` yet
+(T048: `Start` after `ApplySettings` when `diagnosticMode` is on, `Stop` when off and in
+`Wh_ModUninit` before `system::Stop` / `worker::Stop`).
+
+- Worker task: `CreateMutexW(Local\WholeUI.Diagnostic)` (kept open while on) and
+  `WaitForSingleObject(…, 0)`; `WAIT_OBJECT_0` or `WAIT_ABANDONED` (verbose line) → owner →
+  `overlay::StartTracking` → `log::Info` `overlay shown by this process (pid N)`. Otherwise a
+  1 s thread timer (`SetTimer(nullptr, …, TIMERPROC)`) retries; one verbose line `another
+  process shows the overlay; waiting`. If `StartTracking` fails the mutex is released and the
+  instance retries like an idle one. `CreateMutex` failure warns once and retries.
+- Stop task: kill the retry timer, `StopTracking`, `Destroy` (window, class, D2D), release
+  and close the mutex; `log::Info` `overlay removed` only in the owner. research.md R14
+  updated (retry interval, abandoned mutex, thread safety).
+- Live check (temporary `Start` after `ApplySettings` and `Stop` first in uninit, reverted):
+  3 `explorer.exe`; one owner (48468), the other two waiting; reinstall → `overlay removed` in
+  the owner, `[worker] stopped` everywhere, new owner. With a helper script holding the mutex
+  across a reinstall, all three waited; when it exited without releasing, exactly one took
+  over within 1 s with the abandoned line. One `WholeUI.Diagnostic` window (in the owner);
+  none after unload.
+- **Log capture**: eight DBWIN listeners from earlier sessions are still running (python
+  `dbwin.py` in old scratchpads; stopping them was refused by the permission classifier).
+  Each line goes to only one listener, which is why lines seemed "dropped". Merge every
+  `log*.txt` in the old scratchpads (`20e21459-…`, `9df39a7d-…`) with the new one, or ask the
+  maintainer to end those `python.exe` processes.
+- Results: `build.py --check --compile` clean; `tools/test.py` 91/91 C++, 43/43 Python; the
+  clean build is installed (overlay off: nothing calls `Start` yet).
+
 ## Next step
 
-1. Maintainer validates T046; commit as `feat: add copy shortcut to diagnostic overlay`
-   (not pushed). T044, T045 and earlier US3/US4 commits are also unpushed.
-2. T047 single instance (`Local\WholeUI.Diagnostic` mutex) and `diagnostic::Start()` /
-   `Stop()`, then T048 wiring in `main.cpp`.
+1. T047 is committed (`feat: add diagnostic single instance and lifecycle`, not pushed);
+   T044–T046 and earlier US3/US4 commits are also unpushed.
+2. T048 wiring in `main.cpp` (start/stop on init and settings change by `diagnosticMode`,
+   stop at uninit before the worker), then Phase 6 (T049–T054).

@@ -54,4 +54,24 @@ void StopTracking() noexcept;
 
 }  // namespace wholeui::diagnostic::overlay
 
+namespace wholeui::diagnostic {
+
+// Diagnostic mode lifecycle (research R14, FR-020, FR-023). Both are safe from any thread:
+// they post their work to the worker thread, where it runs in order, so a quick off/on/off
+// ends in the last requested state.
+//
+// Start: only one mod instance per session shows the overlay (explorer.exe can run as
+// several processes). The instance that owns the named mutex Local\WholeUI.Diagnostic starts
+// cursor tracking; the others stay idle and try again every second, so one of them takes
+// over when the owner turns the mode off, unloads or exits. Calling Start while on does
+// nothing. Returns false when the work cannot be posted (worker not running).
+bool Start() noexcept;
+
+// Stop: kills the retry timer and the tracking timer, destroys the overlay window and
+// releases the mutex, all in one worker task. Does nothing while off. Must be called before
+// worker::Stop (which runs the posted task before the thread exits).
+void Stop() noexcept;
+
+}  // namespace wholeui::diagnostic
+
 #endif  // WHOLEUI_DIAGNOSTIC_OVERLAY_H

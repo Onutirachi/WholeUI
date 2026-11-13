@@ -402,7 +402,12 @@ guarded by the same lock. Listeners (FR-019) are called after the lock is releas
 
 - **One instance per session**: `explorer.exe` can run as several processes (separate folder
   windows). Only the instance that owns the named mutex `Local\WholeUI.Diagnostic` shows the
-  overlay; the others stay idle and retry when the owner exits.
+  overlay; the others stay idle and retry when the owner exits. The mutex is taken on the
+  worker thread (a mutex belongs to the thread that waits on it) with a zero-timeout wait; an
+  idle instance retries every second from a thread timer on the worker, so it takes over
+  within a second of the owner turning the mode off, unloading or exiting. A mutex left
+  abandoned by an owner that crashed is ownership too. `diagnostic::Start()` / `Stop()` are
+  safe from any thread: they post to the worker, so requests apply in order.
 - **Cursor tracking**: a 50 ms timer reads `GetCursorPos` and `WindowFromPoint`. Identity is
   refreshed when the window under the cursor changes or 100 ms after the cursor stops, which
   meets the 200 ms budget. No low-level mouse or keyboard hook, so input latency is unchanged.
