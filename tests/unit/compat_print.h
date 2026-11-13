@@ -25,7 +25,7 @@ inline std::ostream& operator<<(std::ostream& os, Reason reason) {
         case Reason::Rule: return os << "Rule";
         case Reason::Locked: return os << "Locked";
         case Reason::CappedByTopLevel: return os << "CappedByTopLevel";
-        case Reason::LoweredByPage: return os << "LoweredByPage";
+        case Reason::CappedByPage: return os << "CappedByPage";
         case Reason::Failure: return os << "Failure";
     }
     return os << "Reason(" << static_cast<int>(reason) << ")";

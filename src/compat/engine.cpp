@@ -75,11 +75,8 @@ PageList PagesOf(HWND topLevel) {
 
 WindowClassification Evaluate(const Entry& entry, const RuleSet& rules) {
     const WindowIdentity* topLevel = entry.hasTopLevel ? &entry.topLevel : nullptr;
-    std::span<const WindowIdentity> pages;
-    if (entry.pages) {
-        pages = *entry.pages;
-    }
-    return CopyOf(Classify(entry.identity, topLevel, pages, rules));
+    // Until T059 reads the hosted pages, no page caps a window.
+    return CopyOf(Classify(entry.identity, {}, topLevel, rules));
 }
 
 const wchar_t* LevelText(Level level) {
@@ -97,7 +94,7 @@ const wchar_t* ReasonText(Reason reason) {
         case Reason::Rule: return L"rule";
         case Reason::Locked: return L"locked";
         case Reason::CappedByTopLevel: return L"capped by top-level";
-        case Reason::LoweredByPage: return L"lowered by page";
+        case Reason::CappedByPage: return L"capped by page";
         case Reason::Failure: return L"failure";
     }
     return L"?";
@@ -253,7 +250,7 @@ WindowClassification ClassifyIdentity(const WindowIdentity& window,
             return WindowClassification{};
         }
         // The shared_ptr keeps the rule set alive while CopyOf reads the matched rule.
-        return CopyOf(Classify(window, topLevel, {}, *rules));
+        return CopyOf(Classify(window, {}, topLevel, *rules));
     } catch (...) {
         log::Warn(L"compat", L"identity classification failed: exception");
         return Failure();

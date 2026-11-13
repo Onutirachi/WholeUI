@@ -23,8 +23,8 @@ enum class Reason : std::uint8_t {
     Default,           // no rule matched
     Rule,              // the winning rule's level
     Locked,            // the top-level window is a shell surface (FR-015)
-    CappedByTopLevel,  // a child lowered to its top-level window's level (FR-013)
-    LoweredByPage,     // a property sheet lowered to its lowest page (FR-013a)
+    CappedByTopLevel,  // lowered to its top-level window's level (FR-013)
+    CappedByPage,      // lowered to its nearest hosted page's effective level (FR-013a)
     Failure,           // an identity read failed (FR-018)
 };
 
@@ -88,29 +88,28 @@ struct Classification {
     Level ownLevel = Level::Native;  // level from the window's own rules (step 3)
     Reason reason = Reason::Default;
     const Rule* rule = nullptr;      // the winning rule (the locked one for Locked), if any
-    const WindowIdentity* page = nullptr;  // LoweredByPage: the first lowest page (into `pages`)
 };
 
-// A copy of Classification that stays valid after the rule set and pages are replaced
+// A copy of Classification that stays valid after the rule set is replaced
 // (returned by the engine, shown by diagnostic mode).
 struct WindowClassification {
     Level level = Level::Native;     // effective level
-    Level ownLevel = Level::Native;  // before the top-level and page caps
+    Level ownLevel = Level::Native;  // before the page and top-level caps
     Reason reason = Reason::Default;
     RuleSource ruleSource = RuleSource::BuiltIn;  // meaningful only when ruleOrigin is set
     std::wstring ruleOrigin;                      // empty when no rule
-    Field pageModule;                             // LoweredByPage: the lowering page's module
 };
 
-// Copies `pure` (its rule and page may then be released).
+// Copies `pure` (its rule may then be released).
 WindowClassification CopyOf(const Classification& pure);
 
-// Classifies `window` (data-model.md "Resolution order", steps 1 to 5). `topLevel` is the
-// window's top-level window, or nullptr when `window` is itself top-level. `pages` are the
-// property sheet pages of the top-level window, if it is a sheet. The returned rule pointer
+// Classifies `window` (data-model.md "Resolution order", steps 1 to 4). `pages` are the
+// hosted pages (child `#32770` windows) between the window and its top-level window, nearest
+// first; empty when there are none. `topLevel` is the window's top-level window, or nullptr
+// when `window` is itself top-level (then `pages` must be empty). The returned rule pointer
 // points into `rules`.
-Classification Classify(const WindowIdentity& window, const WindowIdentity* topLevel,
-                        std::span<const WindowIdentity> pages, const RuleSet& rules) noexcept;
+Classification Classify(const WindowIdentity& window, std::span<const WindowIdentity> pages,
+                        const WindowIdentity* topLevel, const RuleSet& rules) noexcept;
 
 // The rules generated from docs/compatibility.md, in document order.
 const std::vector<Rule>& BuiltInRules();

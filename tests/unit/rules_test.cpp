@@ -82,7 +82,7 @@ RuleSet Rules(std::vector<Rule> builtIns, std::vector<Rule> overrides = {}) {
 
 // Classifies a top-level window with no pages.
 Classification TopLevel(const WindowIdentity& window, const RuleSet& rules) {
-    return Classify(window, nullptr, {}, rules);
+    return Classify(window, {}, nullptr, rules);
 }
 
 }  // namespace
@@ -257,7 +257,7 @@ TEST(rules_child_of_locked_top_level_is_native_locked) {
     WindowIdentity child = Window(L"explorer.exe", L"explorer.exe", L"ReBarWindow32");
     RuleSet rules = Rules({Locked({.process = L"explorer.exe", .windowClass = L"Shell_TrayWnd"})},
                           {Override({.windowClass = L"ReBarWindow32"}, Level::Full)});
-    Classification c = Classify(child, &taskbar, {}, rules);
+    Classification c = Classify(child, {}, &taskbar, rules);
     CHECK_EQ(c.level, Level::Native);
     CHECK_EQ(c.reason, Reason::Locked);
 }
@@ -272,7 +272,7 @@ TEST(rules_locked_rule_needs_every_field_to_match) {
     CHECK_EQ(c.reason, Reason::Rule);
 }
 
-// --- Step 5: child capped by its top-level (FR-013) ----------------------------------------
+// --- Step 4: child capped by its top-level (FR-013) ----------------------------------------
 
 TEST(rules_child_capped_by_top_level) {
     WindowIdentity child = Window(L"explorer.exe", L"explorerframe.dll", L"DirectUIHWND");
@@ -280,7 +280,7 @@ TEST(rules_child_capped_by_top_level) {
         BuiltIn({.windowClass = L"CabinetWClass"}, Level::Visual),
         BuiltIn({.windowClass = L"DirectUIHWND"}, Level::Full),
     });
-    Classification c = Classify(child, &kExplorer, {}, rules);
+    Classification c = Classify(child, {}, &kExplorer, rules);
     CHECK_EQ(c.level, Level::Visual);
     CHECK_EQ(c.ownLevel, Level::Full);
     CHECK_EQ(c.reason, Reason::CappedByTopLevel);
@@ -290,7 +290,7 @@ TEST(rules_child_capped_by_top_level) {
 TEST(rules_child_capped_by_unmatched_top_level) {
     WindowIdentity child = Window(L"explorer.exe", L"explorerframe.dll", L"DirectUIHWND");
     RuleSet rules = Rules({BuiltIn({.windowClass = L"DirectUIHWND"}, Level::Full)});
-    Classification c = Classify(child, &kExplorer, {}, rules);
+    Classification c = Classify(child, {}, &kExplorer, rules);
     CHECK_EQ(c.level, Level::Native);
     CHECK_EQ(c.ownLevel, Level::Full);
     CHECK_EQ(c.reason, Reason::CappedByTopLevel);
@@ -302,118 +302,206 @@ TEST(rules_child_lower_than_top_level_keeps_own_level) {
         BuiltIn({.windowClass = L"CabinetWClass"}, Level::Full),
         BuiltIn({.windowClass = L"DirectUIHWND"}, Level::Visual),
     });
-    Classification c = Classify(child, &kExplorer, {}, rules);
+    Classification c = Classify(child, {}, &kExplorer, rules);
     CHECK_EQ(c.level, Level::Visual);
     CHECK_EQ(c.reason, Reason::Rule);
 
     // A child with no rule is native by default, not capped.
     WindowIdentity plain = Window(L"explorer.exe", L"explorerframe.dll", L"Plain");
-    Classification d = Classify(plain, &kExplorer, {}, rules);
+    Classification d = Classify(plain, {}, &kExplorer, rules);
     CHECK_EQ(d.level, Level::Native);
     CHECK_EQ(d.reason, Reason::Default);
 }
 
-// --- Step 4: sheet lowered by its pages (FR-013a) ------------------------------------------
+// --- Step 4: hosted pages in the cap chain (FR-013a) ---------------------------------------
+//
+// A property sheet: the frame is `comctl32.dll` template 1006 (research R8 "Consequence for
+// rules"); pages are child `#32770` windows with their own module and template. `pages` are
+// the hosted pages between a window and its top-level window, nearest first.
 
-TEST(rules_sheet_lowered_by_page) {
-    WindowIdentity sheet = Window(L"explorer.exe", L"shell32.dll", L"#32770",
-                                  TemplateField::Of(L"1040"));
-    std::vector<WindowIdentity> pages = {
-        Window(L"explorer.exe", L"shell32.dll", L"#32770", TemplateField::Of(L"1041")),
-        Window(L"explorer.exe", L"thirdparty.dll", L"#32770", TemplateField::Of(L"100")),
-    };
-    RuleSet rules = Rules({
-        BuiltIn({.module = L"shell32.dll"}, Level::Full),
-        BuiltIn({.module = L"thirdparty.dll"}, Level::Visual),
-    });
-    Classification c = Classify(sheet, nullptr, pages, rules);
-    CHECK_EQ(c.level, Level::Visual);
-    CHECK_EQ(c.ownLevel, Level::Full);
-    CHECK_EQ(c.reason, Reason::LoweredByPage);
-    CHECK(c.rule == &rules.builtIns[0]);
-    CHECK(c.page == &pages[1]);
-}
+namespace {
 
-TEST(rules_sheet_lowered_names_first_lowest_page) {
-    WindowIdentity sheet = Window(L"explorer.exe", L"shell32.dll", L"#32770",
-                                  TemplateField::Of(L"1040"));
-    std::vector<WindowIdentity> pages = {
-        Window(L"explorer.exe", L"visualext.dll", L"#32770", TemplateField::Of(L"1")),
-        Window(L"explorer.exe", L"first.dll", L"#32770", TemplateField::Of(L"2")),
-        Window(L"explorer.exe", L"second.dll", L"#32770", TemplateField::Of(L"3")),
-    };
-    RuleSet rules = Rules({
-        BuiltIn({.module = L"shell32.dll"}, Level::Full),
-        BuiltIn({.module = L"visualext.dll"}, Level::Visual),
-    });
-    Classification c = Classify(sheet, nullptr, pages, rules);
-    CHECK_EQ(c.level, Level::Native);
-    CHECK(c.page == &pages[1]);
-}
+const WindowIdentity kFrame =
+    Window(L"explorer.exe", L"comctl32.dll", L"#32770", TemplateField::Of(L"1006"));
+const WindowIdentity kGeneralPage =
+    Window(L"explorer.exe", L"shell32.dll", L"#32770", TemplateField::Of(L"1041"));
+const WindowIdentity kThirdPartyPage =
+    Window(L"explorer.exe", L"thirdparty.dll", L"#32770", TemplateField::Of(L"100"));
+const WindowIdentity kButton = Window(L"explorer.exe", L"shell32.dll", L"Button");
 
-TEST(rules_copy_of_classification_keeps_rule_and_page_module) {
-    WindowIdentity sheet = Window(L"explorer.exe", L"shell32.dll", L"#32770",
-                                  TemplateField::Of(L"1040"));
-    std::vector<WindowIdentity> pages = {
-        Window(L"explorer.exe", L"thirdparty.dll", L"#32770", TemplateField::Of(L"100")),
-    };
-    RuleSet rules = Rules({BuiltIn({.module = L"shell32.dll"}, Level::Full)});
-    rules.builtIns[0].origin = L"Properties";
-    WindowClassification copy = CopyOf(Classify(sheet, nullptr, pages, rules));
-    CHECK_EQ(copy.level, Level::Native);
-    CHECK_EQ(copy.ownLevel, Level::Full);
-    CHECK_EQ(copy.reason, Reason::LoweredByPage);
-    CHECK(copy.ruleSource == RuleSource::BuiltIn);
-    CHECK(copy.ruleOrigin == L"Properties");
-    CHECK(copy.pageModule.known);
-    CHECK(copy.pageModule.value == L"thirdparty.dll");
+constexpr RuleFields kFrameRule = {.module = L"comctl32.dll", .templateId = L"1006"};
 
-    // Not lowered: no page.
-    WindowClassification plain = CopyOf(Classify(sheet, nullptr, {}, rules));
-    CHECK_EQ(plain.reason, Reason::Rule);
-    CHECK(!plain.pageModule.known);
-}
+}  // namespace
 
-TEST(rules_sheet_lowered_by_unmatched_page) {
-    WindowIdentity sheet = Window(L"explorer.exe", L"shell32.dll", L"#32770",
-                                  TemplateField::Of(L"1040"));
-    std::vector<WindowIdentity> pages = {
-        Window(L"explorer.exe", L"unknownext.dll", L"#32770", TemplateField::Of(L"100")),
-    };
-    RuleSet rules = Rules({BuiltIn({.module = L"shell32.dll"}, Level::Full)});
-    Classification c = Classify(sheet, nullptr, pages, rules);
-    CHECK_EQ(c.level, Level::Native);
-    CHECK_EQ(c.reason, Reason::LoweredByPage);
-    CHECK(c.page == &pages[0]);
-}
-
-TEST(rules_sheet_with_pages_at_same_level_is_not_lowered) {
-    WindowIdentity sheet = Window(L"explorer.exe", L"shell32.dll", L"#32770",
-                                  TemplateField::Of(L"1040"));
-    std::vector<WindowIdentity> pages = {
-        Window(L"explorer.exe", L"shell32.dll", L"#32770", TemplateField::Of(L"1041")),
-    };
-    RuleSet rules = Rules({BuiltIn({.module = L"shell32.dll"}, Level::Full)});
-    Classification c = Classify(sheet, nullptr, pages, rules);
+TEST(rules_frame_is_not_lowered_by_its_pages) {
+    // The frame is classified on its own identity; its pages do not lower it.
+    RuleSet rules = Rules({BuiltIn(kFrameRule, Level::Full)});
+    Classification c = TopLevel(kFrame, rules);
     CHECK_EQ(c.level, Level::Full);
     CHECK_EQ(c.reason, Reason::Rule);
 }
 
-TEST(rules_child_of_lowered_sheet_is_capped_by_sheet_level) {
-    WindowIdentity sheet = Window(L"explorer.exe", L"shell32.dll", L"#32770",
-                                  TemplateField::Of(L"1040"));
-    std::vector<WindowIdentity> pages = {
-        Window(L"explorer.exe", L"thirdparty.dll", L"#32770", TemplateField::Of(L"100")),
-    };
-    WindowIdentity button = Window(L"explorer.exe", L"shell32.dll", L"Button");
+TEST(rules_page_capped_by_top_level) {
     RuleSet rules = Rules({
-        BuiltIn({.module = L"shell32.dll"}, Level::Full),
-        BuiltIn({.module = L"thirdparty.dll"}, Level::Visual),
+        BuiltIn(kFrameRule, Level::Visual),
+        BuiltIn({.module = L"shell32.dll", .templateId = L"1041"}, Level::Full),
     });
-    Classification c = Classify(button, &sheet, pages, rules);
+    Classification c = Classify(kGeneralPage, {}, &kFrame, rules);
     CHECK_EQ(c.level, Level::Visual);
     CHECK_EQ(c.ownLevel, Level::Full);
     CHECK_EQ(c.reason, Reason::CappedByTopLevel);
+    CHECK(c.rule == &rules.builtIns[1]);
+}
+
+TEST(rules_control_capped_by_page) {
+    std::vector<WindowIdentity> pages = {kThirdPartyPage};
+    RuleSet rules = Rules({
+        BuiltIn(kFrameRule, Level::Full),
+        BuiltIn({.module = L"thirdparty.dll"}, Level::Visual),
+        BuiltIn({.windowClass = L"Button"}, Level::Full),
+    });
+    Classification c = Classify(kButton, pages, &kFrame, rules);
+    CHECK_EQ(c.level, Level::Visual);
+    CHECK_EQ(c.ownLevel, Level::Full);
+    CHECK_EQ(c.reason, Reason::CappedByPage);
+    CHECK(c.rule == &rules.builtIns[2]);
+}
+
+TEST(rules_native_page_in_full_frame_stays_native) {
+    // No rule names the third-party page: it stays as Windows draws it, as a whole, while the
+    // frame and the other pages keep their level.
+    std::vector<WindowIdentity> pages = {kThirdPartyPage};
+    RuleSet rules = Rules({
+        BuiltIn(kFrameRule, Level::Full),
+        BuiltIn({.module = L"shell32.dll"}, Level::Full),
+    });
+    Classification page = Classify(kThirdPartyPage, {}, &kFrame, rules);
+    CHECK_EQ(page.level, Level::Native);
+    CHECK_EQ(page.reason, Reason::Default);
+
+    Classification frame = TopLevel(kFrame, rules);
+    CHECK_EQ(frame.level, Level::Full);
+    CHECK_EQ(frame.reason, Reason::Rule);
+
+    Classification other = Classify(kGeneralPage, {}, &kFrame, rules);
+    CHECK_EQ(other.level, Level::Full);
+    CHECK_EQ(other.reason, Reason::Rule);
+
+    // A control inside the native page is native too, even with a rule of its own.
+    Classification button = Classify(kButton, pages, &kFrame, rules);
+    CHECK_EQ(button.level, Level::Native);
+    CHECK_EQ(button.ownLevel, Level::Full);
+    CHECK_EQ(button.reason, Reason::CappedByPage);
+}
+
+TEST(rules_control_in_full_page_inside_visual_frame_gets_visual) {
+    // The page is capped by the frame, and the control by the page's effective level.
+    std::vector<WindowIdentity> pages = {kGeneralPage};
+    RuleSet rules = Rules({
+        BuiltIn(kFrameRule, Level::Visual),
+        BuiltIn({.module = L"shell32.dll"}, Level::Full),
+    });
+    Classification c = Classify(kButton, pages, &kFrame, rules);
+    CHECK_EQ(c.level, Level::Visual);
+    CHECK_EQ(c.ownLevel, Level::Full);
+    CHECK_EQ(c.reason, Reason::CappedByPage);
+}
+
+TEST(rules_control_lower_than_page_keeps_own_level) {
+    std::vector<WindowIdentity> pages = {kGeneralPage};
+    RuleSet rules = Rules({
+        BuiltIn(kFrameRule, Level::Full),
+        BuiltIn({.module = L"shell32.dll", .templateId = L"1041"}, Level::Full),
+        BuiltIn({.windowClass = L"Button"}, Level::Visual),
+    });
+    Classification c = Classify(kButton, pages, &kFrame, rules);
+    CHECK_EQ(c.level, Level::Visual);
+    CHECK_EQ(c.reason, Reason::Rule);
+
+    // A control with no rule is native by default, not capped.
+    WindowIdentity plain = Window(L"explorer.exe", L"shell32.dll", L"Static");
+    Classification d = Classify(plain, pages, &kFrame, rules);
+    CHECK_EQ(d.level, Level::Native);
+    CHECK_EQ(d.reason, Reason::Default);
+}
+
+TEST(rules_nested_pages_cap_each_level) {
+    // control -> inner page -> outer page -> frame.
+    WindowIdentity inner =
+        Window(L"explorer.exe", L"inner.dll", L"#32770", TemplateField::Of(L"200"));
+    WindowIdentity outer =
+        Window(L"explorer.exe", L"outer.dll", L"#32770", TemplateField::Of(L"300"));
+    std::vector<WindowIdentity> controlPages = {inner, outer};
+    std::vector<WindowIdentity> innerPages = {outer};
+    RuleSet rules = Rules({
+        BuiltIn(kFrameRule, Level::Full),
+        BuiltIn({.module = L"outer.dll"}, Level::Visual),
+        BuiltIn({.module = L"inner.dll"}, Level::Full),
+        BuiltIn({.windowClass = L"Button"}, Level::Full),
+    });
+
+    // The outer page is not capped (the frame is full).
+    Classification o = Classify(outer, {}, &kFrame, rules);
+    CHECK_EQ(o.level, Level::Visual);
+    CHECK_EQ(o.reason, Reason::Rule);
+
+    // The inner page is capped by the outer page.
+    Classification i = Classify(inner, innerPages, &kFrame, rules);
+    CHECK_EQ(i.level, Level::Visual);
+    CHECK_EQ(i.ownLevel, Level::Full);
+    CHECK_EQ(i.reason, Reason::CappedByPage);
+
+    // The control is capped through the inner page, whose effective level is visual.
+    Classification c = Classify(kButton, controlPages, &kFrame, rules);
+    CHECK_EQ(c.level, Level::Visual);
+    CHECK_EQ(c.ownLevel, Level::Full);
+    CHECK_EQ(c.reason, Reason::CappedByPage);
+
+    // A native outer page makes everything inside it native.
+    RuleSet nativeOuter = Rules({
+        BuiltIn(kFrameRule, Level::Full),
+        BuiltIn({.module = L"inner.dll"}, Level::Full),
+        BuiltIn({.windowClass = L"Button"}, Level::Full),
+    });
+    CHECK_EQ(Classify(inner, innerPages, &kFrame, nativeOuter).level, Level::Native);
+    Classification n = Classify(kButton, controlPages, &kFrame, nativeOuter);
+    CHECK_EQ(n.level, Level::Native);
+    CHECK_EQ(n.reason, Reason::CappedByPage);
+}
+
+TEST(rules_locked_top_level_wins_over_pages) {
+    // Pages and controls under a shell surface are native and locked, whatever their rules.
+    WindowIdentity surface = Window(L"explorer.exe", L"explorer.exe", L"Shell_TrayWnd");
+    std::vector<WindowIdentity> pages = {kGeneralPage};
+    RuleSet rules = Rules({Locked({.process = L"explorer.exe", .windowClass = L"Shell_TrayWnd"})},
+                          {Override({.module = L"shell32.dll"}, Level::Full),
+                           Override({.windowClass = L"Button"}, Level::Full)});
+    Classification page = Classify(kGeneralPage, {}, &surface, rules);
+    CHECK_EQ(page.level, Level::Native);
+    CHECK_EQ(page.reason, Reason::Locked);
+    CHECK(page.rule == &rules.builtIns[0]);
+
+    Classification button = Classify(kButton, pages, &surface, rules);
+    CHECK_EQ(button.level, Level::Native);
+    CHECK_EQ(button.reason, Reason::Locked);
+}
+
+TEST(rules_copy_of_classification_keeps_rule) {
+    std::vector<WindowIdentity> pages = {kThirdPartyPage};
+    RuleSet rules = Rules({BuiltIn(kFrameRule, Level::Full)},
+                          {Override({.windowClass = L"Button"}, Level::Full)});
+    rules.overrides[0].origin = L"class=Button; level=full";
+    WindowClassification copy = CopyOf(Classify(kButton, pages, &kFrame, rules));
+    CHECK_EQ(copy.level, Level::Native);
+    CHECK_EQ(copy.ownLevel, Level::Full);
+    CHECK_EQ(copy.reason, Reason::CappedByPage);
+    CHECK(copy.ruleSource == RuleSource::Override);
+    CHECK(copy.ruleOrigin == L"class=Button; level=full");
+
+    // No rule: no origin.
+    WindowClassification plain = CopyOf(Classify(kThirdPartyPage, {}, &kFrame, rules));
+    CHECK_EQ(plain.reason, Reason::Default);
+    CHECK(plain.ruleOrigin.empty());
 }
 
 // --- Step 1: failure (FR-018) --------------------------------------------------------------
@@ -434,20 +522,22 @@ TEST(rules_failed_top_level_is_native_failure) {
     top.failed = true;
     WindowIdentity child = Window(L"explorer.exe", L"explorerframe.dll", L"DirectUIHWND");
     RuleSet rules = Rules({BuiltIn({.windowClass = L"DirectUIHWND"}, Level::Full)});
-    Classification c = Classify(child, &top, {}, rules);
+    Classification c = Classify(child, {}, &top, rules);
     CHECK_EQ(c.level, Level::Native);
     CHECK_EQ(c.reason, Reason::Failure);
 }
 
 TEST(rules_failed_page_is_native_failure) {
-    WindowIdentity sheet = Window(L"explorer.exe", L"shell32.dll", L"#32770",
-                                  TemplateField::Of(L"1040"));
-    WindowIdentity page =
-        Window(L"explorer.exe", L"shell32.dll", L"#32770", TemplateField::Of(L"1041"));
+    // A page above the window could not be read: the chain is unknown, so the window is
+    // native whatever its own rules say.
+    WindowIdentity page = kGeneralPage;
     page.failed = true;
     std::vector<WindowIdentity> pages = {page};
-    RuleSet rules = Rules({BuiltIn({.module = L"shell32.dll"}, Level::Full)});
-    Classification c = Classify(sheet, nullptr, pages, rules);
+    RuleSet rules = Rules({
+        BuiltIn(kFrameRule, Level::Full),
+        BuiltIn({.module = L"shell32.dll"}, Level::Full),
+    });
+    Classification c = Classify(kButton, pages, &kFrame, rules);
     CHECK_EQ(c.level, Level::Native);
     CHECK_EQ(c.reason, Reason::Failure);
 }
@@ -488,7 +578,7 @@ TEST(rules_classify_timing_with_200_overrides) {
     int full = 0;
     auto start = std::chrono::steady_clock::now();
     for (int i = 0; i < kCalls; i++) {
-        if (Classify(child, &top, {}, rules).ownLevel == Level::Full) {
+        if (Classify(child, {}, &top, rules).ownLevel == Level::Full) {
             full++;
         }
     }

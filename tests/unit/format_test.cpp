@@ -147,14 +147,9 @@ TEST(format_overlay_reason_texts) {
              "native  ·  shell surface  ·  Taskbar");
     CHECK_EQ(level(Shown(Level::Visual, Reason::CappedByTopLevel, L"Buttons")),
              "visual  ·  capped by top-level  ·  Buttons");
+    CHECK_EQ(level(Shown(Level::Visual, Reason::CappedByPage, L"Buttons")),
+             "visual  ·  capped by page  ·  Buttons");
     CHECK_EQ(level(Shown(Level::Native, Reason::Failure)), "native  ·  failure");
-
-    WindowClassification lowered = Shown(Level::Native, Reason::LoweredByPage, L"Properties");
-    lowered.pageModule = Field::Of(L"rarext.dll");
-    CHECK_EQ(level(lowered), "native  ·  lowered by page rarext.dll  ·  Properties");
-
-    lowered.pageModule = Field::Unknown();
-    CHECK_EQ(level(lowered), "native  ·  lowered by page unknown  ·  Properties");
 }
 
 // --- Clipboard -------------------------------------------------------------------------------

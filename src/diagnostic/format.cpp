@@ -57,9 +57,7 @@ std::wstring ReasonText(const WindowClassification& classification) {
             return classification.ruleSource == RuleSource::Override ? L"override" : L"rule";
         case Reason::Locked: return L"shell surface";
         case Reason::CappedByTopLevel: return L"capped by top-level";
-        case Reason::LoweredByPage:
-            return std::wstring(L"lowered by page ") +
-                   std::wstring(Shown(classification.pageModule));
+        case Reason::CappedByPage: return L"capped by page";
         case Reason::Failure: return L"failure";
     }
     return L"failure";

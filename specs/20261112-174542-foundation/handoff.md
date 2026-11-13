@@ -1,6 +1,6 @@
 # Handoff: Foundation
 
-**Updated**: 2026-11-13 (T055 re-spike done) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
+**Updated**: 2026-11-13 (T056 and T057 committed) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
 
 ## State
 
@@ -545,6 +545,34 @@ walk hosted pages with `GA_PARENT` up to `GA_ROOT` (`GetParent` on a frame retur
   those `python.exe`). Do not send keystrokes: the maintainer uses the machine; ask them to
   open dialogs.
 
+## T056–T057 cap chain (2026-11-13, committed together)
+
+T056 tests (`tests/unit/rules_test.cpp`, `compat_print.h`) failed to compile before T057, as
+expected; T057 makes them pass. API fixed by the tests:
+
+- `Classify(const WindowIdentity& window, std::span<const WindowIdentity> pages,
+  const WindowIdentity* topLevel, const RuleSet& rules)` — same argument order as
+  `ClassifyIdentity`; `pages` = hosted pages between the window and its top-level, nearest
+  first; `topLevel == nullptr` for a top-level window.
+- `Reason::CappedByPage` replaces `LoweredByPage`; `Classification::page` and
+  `WindowClassification::pageModule` are gone (no test uses them).
+- Reason: `CappedByPage` whenever the nearest page is the host and the window's effective
+  level is below its own level, even when the page itself was lowered by the frame (control
+  `full` in a `full` page in a `visual` frame → `visual`, `CappedByPage`).
+  `CappedByTopLevel` only when there are no pages.
+- A frame is never lowered by its pages. A failed page in the chain → `Native`/`Failure`.
+  A locked top-level → `Native`/`Locked` for its pages and their controls too; `rule` is the
+  locked rule.
+- `ClassifyIdentity` with pages is not unit-tested (engine.cpp is Windows code, not built by
+  `test.py`); it is a thin wrapper over `Classify`, checked live in T060.
+- T057: `Classify` caps by `HostLevel` = min of the own levels of the top-level and every
+  page (the chain); `format.cpp` writes `capped by page` (format_test updated).
+- **Bridge until T059**: `engine.cpp` `Evaluate` passes no pages (`{}`), so the stored sheet
+  pages are ignored and nothing is capped by a page yet; its verbose reason text says
+  `capped by page`. T059 removes `PageList` and reads the hosted pages.
+- Results: `tools/test.py` 94/94 C++ and 43/43 Python; `build.py --check --compile` clean
+  (3.0 s). Not installed (the mod stays disabled until T060).
+
 ## Next step
 
 1. T048 is committed (`feat: wire diagnostic mode into the mod`, not pushed). T044–T047 and
@@ -563,5 +591,5 @@ walk hosted pages with `GA_PARENT` up to `GA_ROOT` (`GetParent` on a frame retur
    updated. Points for the maintainer to confirm: the 2 s lookup expiry; the unload wait has
    no time limit (an unload that waits beats a crash); a property sheet frame is always
    `comctl32.dll` `1006`, so later specs choose sheets by a frame rule plus page rules.
-4. Replan committed (`59e86fe`). T055 done (above). Next: T056 (tests first), T057, T058,
-   T059, T060, then T050 again from step 1.
+4. Replan committed (`59e86fe`). T055 done. T056–T057 committed (above). Next: T058
+   (rewrite dialog_hooks), T059, T060, then T050 again from step 1.

@@ -73,21 +73,14 @@ const Rule* LockedRule(const WindowIdentity& topLevel, const RuleSet& rules) {
     return nullptr;
 }
 
-// Step 4: the top-level window's level lowered to its lowest page. `lowest` receives the
-// first page with that level when it is below `level`, else nullptr.
-Level LoweredByPages(Level level, std::span<const WindowIdentity> pages, const RuleSet& rules,
-                     const WindowIdentity** lowest = nullptr) {
-    if (lowest) {
-        *lowest = nullptr;
-    }
+// Step 4: the effective level of a window's host. The top-level window caps the outermost
+// page, each page caps the next one inside it, and the nearest page caps the window, so the
+// host's effective level is the lowest own level along the chain.
+Level HostLevel(std::span<const WindowIdentity> pages, const WindowIdentity& topLevel,
+                const RuleSet& rules) {
+    Level level = OwnLevel(topLevel, rules);
     for (const WindowIdentity& page : pages) {
-        Level pageLevel = OwnLevel(page, rules);
-        if (pageLevel < level) {
-            level = pageLevel;
-            if (lowest) {
-                *lowest = &page;
-            }
-        }
+        level = std::min(level, OwnLevel(page, rules));
     }
     return level;
 }
@@ -110,8 +103,8 @@ bool EqualsIgnoreCase(std::wstring_view a, std::wstring_view b) noexcept {
     return true;
 }
 
-Classification Classify(const WindowIdentity& window, const WindowIdentity* topLevel,
-                        std::span<const WindowIdentity> pages, const RuleSet& rules) noexcept {
+Classification Classify(const WindowIdentity& window, std::span<const WindowIdentity> pages,
+                        const WindowIdentity* topLevel, const RuleSet& rules) noexcept {
     // Step 1: a failed read anywhere the result depends on is fail-safe Native.
     const WindowIdentity& top = topLevel ? *topLevel : window;
     if (window.failed || top.failed ||
@@ -131,22 +124,15 @@ Classification Classify(const WindowIdentity& window, const WindowIdentity* topL
     result.ownLevel = result.rule ? result.rule->level : Level::Native;
     result.level = result.ownLevel;
     result.reason = result.rule ? Reason::Rule : Reason::Default;
-
     if (!topLevel) {
-        // Step 4: a sheet is no higher than its lowest page.
-        Level lowered = LoweredByPages(result.ownLevel, pages, rules, &result.page);
-        if (lowered < result.ownLevel) {
-            result.level = lowered;
-            result.reason = Reason::LoweredByPage;
-        }
         return result;
     }
 
-    // Step 5: a child is no higher than its top-level window's effective level.
-    Level cap = LoweredByPages(OwnLevel(top, rules), pages, rules);
+    // Step 4: no higher than its host (nearest page, else the top-level window).
+    Level cap = HostLevel(pages, top, rules);
     if (cap < result.ownLevel) {
         result.level = cap;
-        result.reason = Reason::CappedByTopLevel;
+        result.reason = pages.empty() ? Reason::CappedByTopLevel : Reason::CappedByPage;
     }
     return result;
 }
@@ -159,9 +145,6 @@ WindowClassification CopyOf(const Classification& pure) {
     if (pure.rule) {
         result.ruleSource = pure.rule->source;
         result.ruleOrigin = pure.rule->origin;
-    }
-    if (pure.page) {
-        result.pageModule = pure.page->module;
     }
     return result;
 }
