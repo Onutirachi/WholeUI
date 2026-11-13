@@ -14,6 +14,7 @@
 using wholeui::compat::BuiltInRules;
 using wholeui::compat::Classification;
 using wholeui::compat::Classify;
+using wholeui::compat::CopyOf;
 using wholeui::compat::Field;
 using wholeui::compat::Level;
 using wholeui::compat::Reason;
@@ -21,6 +22,7 @@ using wholeui::compat::Rule;
 using wholeui::compat::RuleSet;
 using wholeui::compat::RuleSource;
 using wholeui::compat::TemplateField;
+using wholeui::compat::WindowClassification;
 using wholeui::compat::WindowIdentity;
 
 namespace {
@@ -329,6 +331,47 @@ TEST(rules_sheet_lowered_by_page) {
     CHECK_EQ(c.ownLevel, Level::Full);
     CHECK_EQ(c.reason, Reason::LoweredByPage);
     CHECK(c.rule == &rules.builtIns[0]);
+    CHECK(c.page == &pages[1]);
+}
+
+TEST(rules_sheet_lowered_names_first_lowest_page) {
+    WindowIdentity sheet = Window(L"explorer.exe", L"shell32.dll", L"#32770",
+                                  TemplateField::Of(L"1040"));
+    std::vector<WindowIdentity> pages = {
+        Window(L"explorer.exe", L"visualext.dll", L"#32770", TemplateField::Of(L"1")),
+        Window(L"explorer.exe", L"first.dll", L"#32770", TemplateField::Of(L"2")),
+        Window(L"explorer.exe", L"second.dll", L"#32770", TemplateField::Of(L"3")),
+    };
+    RuleSet rules = Rules({
+        BuiltIn({.module = L"shell32.dll"}, Level::Full),
+        BuiltIn({.module = L"visualext.dll"}, Level::Visual),
+    });
+    Classification c = Classify(sheet, nullptr, pages, rules);
+    CHECK_EQ(c.level, Level::Native);
+    CHECK(c.page == &pages[1]);
+}
+
+TEST(rules_copy_of_classification_keeps_rule_and_page_module) {
+    WindowIdentity sheet = Window(L"explorer.exe", L"shell32.dll", L"#32770",
+                                  TemplateField::Of(L"1040"));
+    std::vector<WindowIdentity> pages = {
+        Window(L"explorer.exe", L"thirdparty.dll", L"#32770", TemplateField::Of(L"100")),
+    };
+    RuleSet rules = Rules({BuiltIn({.module = L"shell32.dll"}, Level::Full)});
+    rules.builtIns[0].origin = L"Properties";
+    WindowClassification copy = CopyOf(Classify(sheet, nullptr, pages, rules));
+    CHECK_EQ(copy.level, Level::Native);
+    CHECK_EQ(copy.ownLevel, Level::Full);
+    CHECK_EQ(copy.reason, Reason::LoweredByPage);
+    CHECK(copy.ruleSource == RuleSource::BuiltIn);
+    CHECK(copy.ruleOrigin == L"Properties");
+    CHECK(copy.pageModule.known);
+    CHECK(copy.pageModule.value == L"thirdparty.dll");
+
+    // Not lowered: no page.
+    WindowClassification plain = CopyOf(Classify(sheet, nullptr, {}, rules));
+    CHECK_EQ(plain.reason, Reason::Rule);
+    CHECK(!plain.pageModule.known);
 }
 
 TEST(rules_sheet_lowered_by_unmatched_page) {
@@ -341,6 +384,7 @@ TEST(rules_sheet_lowered_by_unmatched_page) {
     Classification c = Classify(sheet, nullptr, pages, rules);
     CHECK_EQ(c.level, Level::Native);
     CHECK_EQ(c.reason, Reason::LoweredByPage);
+    CHECK(c.page == &pages[0]);
 }
 
 TEST(rules_sheet_with_pages_at_same_level_is_not_lowered) {

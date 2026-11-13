@@ -27,6 +27,8 @@
 #include "tokens/system.cpp"
 #include "tokens/runtime.h"
 #include "tokens/runtime.cpp"
+#include "diagnostic/format.h"
+#include "diagnostic/format.cpp"
 
 namespace {
 

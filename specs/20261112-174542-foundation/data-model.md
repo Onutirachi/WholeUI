@@ -57,6 +57,7 @@ number. Replaced as a whole when settings change.
 | `reason` | enum | `Default` (no rule), `Rule`, `Locked` (shell surface), `CappedByTopLevel` (FR-013), `LoweredByPage` (FR-013a), `Failure` (FR-018) |
 | `rule` | `const Rule*` or none | The winning rule, if any |
 | `ownLevel` | `Level` | Level before the caps, shown by diagnostic mode |
+| `page` | page identity or none | `LoweredByPage` only: the first page with the lowest level; its module is shown by diagnostic mode (`lowered by page <module>`) |
 
 ### Resolution order (pure function `classify(identity, ruleSet)`)
 

@@ -11,14 +11,17 @@ namespace wholeui::compat {
 
 enum class Level : uint8_t { Native, Visual, Full };
 
-// rules.h already has the pure Classification (with a Rule pointer into the rule set);
-// the engine returns a copy that stays valid after the rule set is replaced.
+// rules.h has the pure Classification (with a Rule pointer into the rule set and, for
+// LoweredByPage, a pointer to the first lowest page). WindowClassification, also in rules.h
+// (PURE, so diagnostic/format can use it), is the copy made by CopyOf: it stays valid after
+// the rule set and pages are replaced.
 struct WindowClassification {
     Level level;            // effective level
     Level ownLevel;         // before top-level / page caps
     Reason reason;          // Default, Rule, Locked, CappedByTopLevel, LoweredByPage, Failure
     RuleSource ruleSource;  // meaningful only when ruleOrigin is not empty
     std::wstring ruleOrigin;// empty when no rule
+    Field pageModule;       // LoweredByPage: module of the page that lowered it (may be Unknown)
 };
 
 // Safe from any thread. Never throws. Any failure yields Level::Native (FR-018).

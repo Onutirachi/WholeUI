@@ -48,7 +48,13 @@ Ctrl+Alt+Shift+C copies
 ```
 
 `<reason>` is one of: `default`, `rule`, `override`, `shell surface`, `capped by top-level`,
-`lowered by page <module>`, `failure`. Any unreadable field shows `unknown`.
+`lowered by page <module>`, `failure`; `· <rule origin>` is left out when no rule matched. Any
+unreadable (or empty) field shows `unknown`. When the window is itself top-level, the
+Top-level line repeats it.
+
+In the text built by `diagnostic/format` (`OverlayText`) each line is `<label>` TAB `<value>`
+(the overlay draws with a proportional font and aligns the values on a tab stop, so the
+padding above is only for reading); the hint line has no tab. Lines are separated by CRLF.
 
 ## Clipboard (Ctrl+Alt+Shift+C)
 
@@ -63,5 +69,7 @@ process=explorer.exe; module=explorer.exe; class=CabinetWClass; level=native
 
 `<name>` is a placeholder the maintainer replaces; `<build>` is the current Windows build as
 `<CurrentBuild>.<UBR>` (for example `26300.1234`), read with `RegGetValueW` from
-`HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion`, or `—` if the read fails. The two lines
-are separated by CRLF.
+`HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion`, or `—` if either read fails. The two
+lines are separated by CRLF. The Validated cell is `—`. If every identity field is unknown,
+the override line is only `level=<level>` (the settings parser reports it as `no identity
+field`), which is accepted: such a window cannot be targeted anyway.

@@ -73,10 +73,21 @@ const Rule* LockedRule(const WindowIdentity& topLevel, const RuleSet& rules) {
     return nullptr;
 }
 
-// Step 4: the top-level window's level lowered to its lowest page.
-Level LoweredByPages(Level level, std::span<const WindowIdentity> pages, const RuleSet& rules) {
+// Step 4: the top-level window's level lowered to its lowest page. `lowest` receives the
+// first page with that level when it is below `level`, else nullptr.
+Level LoweredByPages(Level level, std::span<const WindowIdentity> pages, const RuleSet& rules,
+                     const WindowIdentity** lowest = nullptr) {
+    if (lowest) {
+        *lowest = nullptr;
+    }
     for (const WindowIdentity& page : pages) {
-        level = std::min(level, OwnLevel(page, rules));
+        Level pageLevel = OwnLevel(page, rules);
+        if (pageLevel < level) {
+            level = pageLevel;
+            if (lowest) {
+                *lowest = &page;
+            }
+        }
     }
     return level;
 }
@@ -123,7 +134,7 @@ Classification Classify(const WindowIdentity& window, const WindowIdentity* topL
 
     if (!topLevel) {
         // Step 4: a sheet is no higher than its lowest page.
-        Level lowered = LoweredByPages(result.ownLevel, pages, rules);
+        Level lowered = LoweredByPages(result.ownLevel, pages, rules, &result.page);
         if (lowered < result.ownLevel) {
             result.level = lowered;
             result.reason = Reason::LoweredByPage;
@@ -136,6 +147,21 @@ Classification Classify(const WindowIdentity& window, const WindowIdentity* topL
     if (cap < result.ownLevel) {
         result.level = cap;
         result.reason = Reason::CappedByTopLevel;
+    }
+    return result;
+}
+
+WindowClassification CopyOf(const Classification& pure) {
+    WindowClassification result;
+    result.level = pure.level;
+    result.ownLevel = pure.ownLevel;
+    result.reason = pure.reason;
+    if (pure.rule) {
+        result.ruleSource = pure.rule->source;
+        result.ruleOrigin = pure.rule->origin;
+    }
+    if (pure.page) {
+        result.pageModule = pure.page->module;
     }
     return result;
 }

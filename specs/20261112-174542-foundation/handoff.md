@@ -1,6 +1,6 @@
 # Handoff: Foundation
 
-**Updated**: 2026-11-13 (US4 complete: T040 committed) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
+**Updated**: 2026-11-13 (US3: T041–T042 committed) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
 
 ## State
 
@@ -294,8 +294,33 @@ dialog hooks → settings. `Wh_ModUninit`: dialog hooks off → `system::Stop` �
 - Results: `build.py --check --compile` clean; `tools/test.py` 74/74 C++, 43/43 Python; the
   clean build is installed.
 
+## T041–T042 diagnostic text (2026-11-13)
+
+`src/diagnostic/format.h` / `format.cpp` (**PURE**), namespace `wholeui::diagnostic`:
+`LevelText(Level)`, `OverlayText(window, topLevel, WindowClassification, inProcess)`,
+`OverrideLine(topLevel, level)`, `TableRow(topLevel, level, build)`,
+`BuildText(optional<wstring> currentBuild, optional<uint32_t> ubr)` (empty when either read
+failed; `TableRow` writes `—`), `ClipboardText(topLevel, level, build)` (override + CRLF + row).
+Tests in `tests/unit/format_test.cpp` (15). Included in `main.cpp`, not called yet.
+
+- `lowered by page <module>` needed the page: `compat::Classification` gained
+  `const WindowIdentity* page` (first page with the lowest level), and `WindowClassification`
+  **moved from engine.h to rules.h** (PURE) with a new `Field pageModule`; `CopyOf(pure)` in
+  rules.cpp makes the copy (the engine uses it). 2 new tests in rules_test.cpp. engine-api.md
+  and data-model.md updated.
+- Overlay text: each line is `<label>` TAB `<value>` (T044 sets a DirectWrite tab stop to
+  align values with the proportional font); hint line last, no tab; CRLF between lines. The
+  `· <rule origin>` part is left out when no rule matched; a known but empty field shows
+  `unknown`; `topLevel` is the window itself for a top-level window. compatibility-doc.md
+  updated.
+- An all-unknown identity gives an override line of only `level=…` (accepted; recorded).
+- Results: `tools/test.py` 91/91 C++, 43/43 Python; `build.py --check --compile` clean.
+  Not installed (nothing calls it).
+
 ## Next step
 
-1. T040 committed as `feat: wire token system into mod lifecycle`
-   (not pushed). US4 is complete.
-2. Phase 6 / US3 (diagnostic overlay), starting at T041.
+1. T041–T042 committed as `feat: add diagnostic text format`
+   (not pushed). US4 commit `feat: wire token system into mod lifecycle` is also unpushed.
+2. T043: "classify without a window" entry in the engine for other processes' identities
+   (can use `compat::Classify` + `CopyOf` on the current rule set, no cache), then T044
+   overlay window.

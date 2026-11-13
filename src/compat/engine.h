@@ -17,16 +17,6 @@
 
 namespace wholeui::compat {
 
-// rules.h's Classification points into the rule set; this copy stays valid after the rule
-// set is replaced.
-struct WindowClassification {
-    Level level = Level::Native;     // effective level
-    Level ownLevel = Level::Native;  // before the top-level and page caps
-    Reason reason = Reason::Default;
-    RuleSource ruleSource = RuleSource::BuiltIn;  // meaningful only when ruleOrigin is set
-    std::wstring ruleOrigin;                      // empty when no rule
-};
-
 // Safe from any thread. Never throws. Any failure gives Native with reason Failure and one
 // log::Warn (FR-018). Before the first SetRuleSet (and after ResetEngine) every window is
 // Native with reason Default.

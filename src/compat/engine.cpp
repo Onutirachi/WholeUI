@@ -79,16 +79,7 @@ WindowClassification Evaluate(const Entry& entry, const RuleSet& rules) {
     if (entry.pages) {
         pages = *entry.pages;
     }
-    Classification pure = Classify(entry.identity, topLevel, pages, rules);
-    WindowClassification result;
-    result.level = pure.level;
-    result.ownLevel = pure.ownLevel;
-    result.reason = pure.reason;
-    if (pure.rule) {
-        result.ruleSource = pure.rule->source;
-        result.ruleOrigin = pure.rule->origin;
-    }
-    return result;
+    return CopyOf(Classify(entry.identity, topLevel, pages, rules));
 }
 
 const wchar_t* LevelText(Level level) {
