@@ -1,6 +1,6 @@
 # Handoff: Foundation
 
-**Updated**: 2026-11-13 (US4: T035 tests and T036 resolver committed) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
+**Updated**: 2026-11-13 (US4: T037 worker thread committed) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
 
 ## State
 
@@ -197,7 +197,33 @@ Interpretations the tests encode, recorded in data-model.md: "X at N %" keeps X'
 sets alpha to round(N % × 255) (90 % → `E6`, 60 % → `99`); the 20 px Text/Display split uses
 the **scaled** size (at 150 % `body` is 21 px → Display).
 
+## T037 worker thread (2026-11-13)
+
+`src/core/worker.h` / `worker.cpp` (not PURE), namespace `wholeui::worker`: `Start()`,
+`Stop()`, `Post(std::function<void()>)`, `IsWorkerThread()`, all `noexcept`.
+
+- One thread, `RoInitialize(RO_INIT_SINGLETHREADED)`, a message loop and a **message-only
+  window** (`WholeUI.Worker`, `HWND_MESSAGE`) that receives the wake and quit messages
+  (a thread message would be lost in a modal loop on the worker).
+- Tasks sit in a `std::deque` under an `SRWLOCK`; one wake message at a time
+  (`wakePending`). Tasks run FIFO, outside the lock; a throwing task is logged
+  (`log::Warn`) and skipped.
+- `Start` does not wait for the thread (no wait inside `Wh_ModInit`); tasks posted before the
+  window exists run as soon as it does.
+- `Stop` closes the queue, posts quit, waits `INFINITE`; every task posted before `Stop` runs
+  first (a final drain after the loop catches tasks whose wake reached a destroyed window), so
+  T038 can post its unregister/release and rely on `Stop`. `Stop` on the worker thread is
+  ignored with a warning.
+- Wired in `main.cpp` already (`Start` first in `Wh_ModInit`; `Stop` after the dialog hooks
+  are removed, before `ResetEngine`); T040 adds the token system around it.
+- Live check (temporary code, reverted): three posted tasks ran on the worker, a throwing one
+  was logged and skipped; two `--install` reloads stopped the old worker (`[worker] stopped`)
+  with no hang. `[worker] started` is Verbose and is written before settings turn verbose on,
+  so it does not appear at load.
+- Results: `build.py --check --compile` clean; `tools/test.py` 72/72 C++, 43/43 Python; the
+  clean build is installed.
+
 ## Next step
 
-1. Phase 5 (US4): T037 (worker thread), T038 (system reads), T039 (runtime snapshot), T040
-   (wiring in `main.cpp`).
+1. T037 committed as `feat: add worker thread` (not pushed).
+2. Phase 5 (US4): T038 (system reads), T039 (runtime snapshot), T040 (wiring in `main.cpp`).

@@ -7,6 +7,8 @@
 #include "core/log.cpp"
 #include "core/lock.h"
 #include "core/subscriptions.h"
+#include "core/worker.h"
+#include "core/worker.cpp"
 #include "compat/rules.h"
 #include "compat/rules.cpp"
 #include "settings/overrides.h"
@@ -44,6 +46,9 @@ void ApplySettings(const wchar_t* when) {
 
 BOOL Wh_ModInit() {
     wholeui::log::Info(L"core", L"WholeUI %s loaded", WH_MOD_VERSION);
+    // A worker that does not start leaves the tokens on their defaults and the diagnostic
+    // overlay off; window classification does not need it, so the mod still loads.
+    wholeui::worker::Start();
     wholeui::compat::InstallDialogHooks();
     ApplySettings(L"loaded");
     return TRUE;
@@ -55,5 +60,6 @@ void Wh_ModSettingsChanged() {
 
 void Wh_ModUninit() {
     wholeui::compat::UninstallDialogHooks();
+    wholeui::worker::Stop();
     wholeui::compat::ResetEngine();
 }
