@@ -184,7 +184,7 @@ remain.
 
 ## Phase 7: Polish and live acceptance
 
-- [ ] T049 Run `python tools/build.py --check`, `--compile` and `python tools/test.py`; record the SC-004 timing printed by T021 in handoff.md
+- [X] T049 Run `python tools/build.py --check`, `--compile` and `python tools/test.py`; record the SC-004 timing printed by T021 in handoff.md
 - [ ] T050 Live acceptance: run every step of [quickstart.md](quickstart.md) "Validate on the live system" (1–11) on the maintainer's machine with the maintainer; record the Windows build, results and any failing step in handoff.md (SC-003, SC-005, SC-006, SC-008)
 - [ ] T051 Confirm or correct the shell-surface classes from step 3 in `docs/compatibility.md` (research R9), and confirm `$name:pt-BR` from step 10 in research.md R3 (handoff open questions)
 - [ ] T052 [P] Update `AGENTS.md` "Status" and `docs/roadmap.md` to say the foundation spec is implemented, and `README.md` with the build commands from quickstart.md

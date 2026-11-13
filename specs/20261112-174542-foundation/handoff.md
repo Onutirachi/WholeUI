@@ -1,6 +1,6 @@
 # Handoff: Foundation
 
-**Updated**: 2026-11-13 (US3: T048 committed) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
+**Updated**: 2026-11-13 (Phase 6: T049 done) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
 
 ## State
 
@@ -476,10 +476,19 @@ it was. `Wh_ModUninit`: dialog hooks off → `diagnostic::Stop` → `system::Sto
 - Results: `build.py --check --compile` clean; `tools/test.py` 91/91 C++, 43/43 Python; the
   clean build is installed (diagnostic mode on).
 
+## T049 build, tests and SC-004 (2026-11-13)
+
+- `python tools/build.py --check`: wrote `build/wholeui.wh.cpp` in 28 ms, `identical`.
+- `python tools/build.py --compile`: compiled `build/wholeui.dll` with Windhawk's compiler in
+  3.5 s (SC-001 < 30 s met).
+- `python tools/test.py`: 91/91 C++, 43/43 Python.
+- **SC-004**: T021 printed `classify: 210 rules, average 1.00 us per call over 10000 calls`
+  (200 overrides + the built-ins), about 1000 times under the 1 ms budget. This times the pure
+  `compat::Classify`; the identity reads (`ReadIdentity`, module name) are not in it and are
+  measured live, if needed, in T050.
+
 ## Next step
 
-1. T048 is committed
-   (`feat: wire diagnostic mode into the mod`, not pushed). T044–T047 and earlier US3/US4
-   commits are also unpushed.
-2. Phase 6: T049 (build, tests, SC-004 timing), then T050 live acceptance with the
-   maintainer (quickstart.md steps 1–11), T051–T054.
+1. T048 is committed (`feat: wire diagnostic mode into the mod`, not pushed). T044–T047 and
+   earlier US3/US4 commits are also unpushed. T049 changed only handoff.md and tasks.md.
+2. T050 live acceptance with the maintainer (quickstart.md steps 1–11), then T051–T054.
