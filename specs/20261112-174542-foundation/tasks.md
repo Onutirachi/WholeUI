@@ -182,10 +182,28 @@ remain.
 
 ---
 
-## Phase 7: Polish and live acceptance
+## Phase 7: Safe unload and hosted pages (rework after T050 run 1)
+
+**Purpose**: T050 run 1 crashed Explorer when the mod was disabled with the Run dialog open
+(handoff). Constitution 2.0.0, FR-013a, FR-023a and research R8 (revised decision) replace
+the dialog hooks and the sheet page list. T050 runs again, from step 1, after this phase.
+
+- [ ] T055 Re-spike on branch `spike/20261113-unload-safe-dialogs` (not merged, research R8 **Verify** a–e): only `FindResourceExW` / `FindResourceW` hooks arming a thread CBT hook, logging only; check the templates of Run, a sheet frame, its pages (including `rarext.dll`) and Folder Options; count lookups not followed by a dialog and how long the hook stays armed; unhook a CBT hook armed on another thread from `Wh_ModUninit`; disable with Run and a Properties dialog open, then close them; log page visibility at creation and a control's ancestor chain. Record findings in research.md R8 "Re-spike findings"; if one contradicts the decision, update R8, plan and tasks and get the maintainer's approval before T058
+- [ ] T056 [P] Update `tests/unit/rules_test.cpp`: remove the `LoweredByPage` cases; add the cap chain from data-model.md "Resolution order" step 4: a page capped by its top-level (`CappedByTopLevel`); a control capped by its page (`CappedByPage`); a `native` page inside a `full` frame stays `native` while the frame stays `full`; a control in a `full` page inside a `visual` frame gets `visual`; nested pages; a locked top-level wins over everything; `ClassifyIdentity` with pages. They must fail before T057
+- [ ] T057 Update `src/compat/rules.h` / `src/compat/rules.cpp` (**PURE**): remove `LoweredByPage`, the page pointer and `pageModule`; add `CappedByPage`; `Classify` takes the window, its hosted pages (nearest first, `std::span`) and its top-level identity; update `tests/unit/format_test.cpp` and `src/diagnostic/format.cpp` for the reason text `capped by page` ([contracts/compatibility-doc.md](contracts/compatibility-doc.md))
+- [ ] T058 Rewrite `src/compat/dialog_hooks.h` / `src/compat/dialog_hooks.cpp` per research R8 revised decision (written fresh from the decision, not from the spike): remove the `user32` dialog hooks, the `comctl32` hooks, the `LoadLibraryExW` hook, the pending sheet, `SheetPagesOf` and the late page path; `FindResourceExW` / `FindResourceW` hooks remember `RT_DIALOG` lookups and arm the thread CBT hook; `CbtProc` records `HWND → template` for `#32770` by module, drops lookups older than 2 s and disarms itself when none remain; a process-wide registry of armed hooks and an in-flight counter; `UninstallDialogHooks` sets the stopping flag, unhooks every armed hook and waits for running callbacks (one `log::Warn` if over 1 s); the per-thread state stays trivially destructible
+- [ ] T059 Update `src/compat/identity.cpp`, `src/compat/engine.h` / `engine.cpp` and `src/diagnostic/overlay.cpp` per [contracts/engine-api.md](contracts/engine-api.md): remove `PageList`, `pagesEpoch` and `OnSheetPagesChanged`; read the hosted pages between a window and its top-level window (ancestors of class `#32770` with `WS_CHILD`, nearest first) outside the lock; keep their identities in the cache entry so `SetRuleSet` re-classifies without calling Windows; the verbose line names the nearest page; `ClassifyIdentity` gets the pages of other processes' windows from the overlay
+- [ ] T060 Run `python tools/build.py --check`, `--compile` and `python tools/test.py`; confirm with `grep` that no `user32` dialog function, `comctl32` function or `LoadLibrary*` is hooked; install, and check the Run dialog's template and a Properties dialog's frame and pages in the verbose log; record results in handoff.md
+
+**Checkpoint**: unloading is safe with modal dialogs open; pages are capped by their host;
+T050 can run again from step 1.
+
+---
+
+## Phase 8: Polish and live acceptance
 
 - [X] T049 Run `python tools/build.py --check`, `--compile` and `python tools/test.py`; record the SC-004 timing printed by T021 in handoff.md
-- [ ] T050 Live acceptance: run every step of [quickstart.md](quickstart.md) "Validate on the live system" (1–11) on the maintainer's machine with the maintainer; record the Windows build, results and any failing step in handoff.md (SC-003, SC-005, SC-006, SC-008)
+- [ ] T050 Live acceptance: run every step of [quickstart.md](quickstart.md) "Validate on the live system" (1–11) on the maintainer's machine with the maintainer; record the Windows build, results and any failing step in handoff.md (SC-003, SC-005, SC-006, SC-008). Run 1 stopped at step 11 (handoff); run 2 starts again from step 1 after Phase 7
 - [ ] T051 Confirm or correct the shell-surface classes from step 3 in `docs/compatibility.md` (research R9), and confirm `$name:pt-BR` from step 10 in research.md R3 (handoff open questions)
 - [ ] T052 [P] Update `AGENTS.md` "Status" and `docs/roadmap.md` to say the foundation spec is implemented, and `README.md` with the build commands from quickstart.md
 - [ ] T053 [P] Confirm `docs/credits.md` needs no entry for this spec (no mod inspired it; constitution VI) and say so in handoff.md
@@ -203,7 +221,9 @@ remain.
 - **US2 (Phase 4)**: after US1. T032 (spike) before T033; T029 before T034.
 - **US4 (Phase 5)**: after US1; independent of US2.
 - **US3 (Phase 6)**: after US2 and US4.
-- **Polish (Phase 7)**: after all stories.
+- **Rework (Phase 7)**: after T050 run 1. T055 before T057–T059 (its findings may change
+  them); T056 before T057; T057 before T059; T058 and T059 before T060.
+- **Polish (Phase 8)**: after all stories and Phase 7; T050 restarts from step 1 after T060.
 
 ### Within each story
 
@@ -243,7 +263,7 @@ Task: "Implement src/settings/overrides.h/.cpp (T027)"
 2. US2 (with the spike on its own branch) → validate → commit.
 3. US4 → validate → commit.
 4. US3 → validate → commit.
-5. Live acceptance (Phase 7) → handoff → pull request.
+5. Live acceptance (Phase 8) → handoff → pull request.
 
 Suggested break points for a new conversation: after US1, after US2, after US4, before
 live acceptance; update handoff.md first.

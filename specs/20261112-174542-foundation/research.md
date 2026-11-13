@@ -200,8 +200,8 @@ justify); GoogleTest (build system needed).
 
 **Decision**: the engine classifies a window **when first asked** (by a later spec, or by
 diagnostic mode) and caches the result per `HWND`. The only work done at window creation is
-recording facts that cannot be read later: the dialog template ID and the pages of property
-sheets (R7, R8). No global window creation hook, no per-window subclassing.
+recording a fact that cannot be read later: the dialog template ID (R7, R8). No global
+window creation hook, no per-window subclassing.
 
 **Rationale**: in this spec nobody asks, so the mod costs nothing in normal use (FR-008,
 FR-028). Later specs ask at the moment they would change a window.
@@ -219,7 +219,7 @@ dropped on the next settings change or when the cache passes 4,096 entries (a sw
 | Process image | `GetModuleFileNameW(nullptr)` → file name | `GetWindowThreadProcessId` + `OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION)` + `QueryFullProcessImageNameW` |
 | Creating module | `GetWindowLongPtrW(GWLP_HINSTANCE)` → `GetModuleFileNameW` | same `HINSTANCE` value + `OpenProcess(PROCESS_QUERY_INFORMATION \| PROCESS_VM_READ)` + `GetModuleFileNameExW`; "unknown" when access is denied (elevated or protected processes) |
 | Window class | `GetClassNameW` | `GetClassNameW` (works across processes) |
-| Template ID | from the dialog facts store (R8); "not a dialog" when the class is not `#32770`; "unknown" for a dialog created before the mod loaded or through an indirect template | always "unknown" for dialogs |
+| Template ID | from the dialog facts store (R8); "not a dialog" when the class is not `#32770`; "unknown" for a dialog created before the mod loaded or whose template was not found through `FindResource*` on the creating thread | always "unknown" for dialogs |
 
 All are documented Win32 functions. File names are compared case-insensitively, without the
 path. "Creating module" is the `HINSTANCE` the creator passed to `CreateWindowEx` /
@@ -231,37 +231,71 @@ the engine sees, so a rule can be written against it.
 **Alternatives**: return address of the `CreateWindowExW` caller (needs a hook on every
 window creation and stack inspection; heavier and less stable); window titles (forbidden).
 
-## R8. Dialog template IDs and property sheet pages (FR-013a)
+## R8. Dialog template IDs and hosted pages (FR-013a, FR-023a)
 
-**Decision**
+**Decision** (revised 2026-11-13 after T050 run 1 crashed Explorer on unload; replaces the
+first design and its T032 revision, summarized under "Superseded designs" below)
 
-- Hooks (Windhawk `Wh_SetFunctionHook` on documented `user32` exports): `CreateDialogParamW`,
-  `DialogBoxParamW`, `CreateDialogIndirectParamW`, `DialogBoxIndirectParamW`. During the call
-  the hook installs a **thread-local** `WH_CBT` hook that, at the first `HCBT_CREATEWND` for a
-  `#32770` window with the same `HINSTANCE`, records `{HWND → module, template}` (template
-  ID only for the non-indirect variants) and removes itself. The CBT hook is installed only on
-  the calling thread and only for the duration of the call; it changes nothing.
-- Hooks on `comctl32` exports `CreatePropertySheetPageW` (records page handle → page
-  `HINSTANCE` and `pszTemplate`) and `PropertySheetW` (records the pages listed in the header,
-  either as handles or inline `PROPSHEETPAGEW`, as a thread-local "pending sheet"). When the
-  sheet's top-level dialog is created on that thread during `PropertySheetW`, the pending page
-  list is attached to that `HWND`. The sheet's level is the lowest of the host and all listed
-  pages, decided before the sheet is shown, as FR-013a requires; pages are only created when
-  their tab is first selected, which is why the list comes from the header and not from the
-  page windows.
-- A page added later (a child `#32770` of a known sheet, created through
-  `CreateDialogIndirectParamW` with an `HINSTANCE` not in the list) lowers the sheet's level if
-  its module's level is lower; the engine then notifies listeners (FR-019), so the later spec
-  that styled the sheet restores it.
-- Hooks are set in `Wh_ModInit`; Windhawk removes them on unload. Hooking only the `W`
-  variants is enough for `explorer.exe`; dialogs created through `A` variants get template
-  "unknown", which is safe (rules naming a template do not match).
-- **Verify** (spike task, own branch): open a file's Properties dialog with a third-party
-  shell extension page and confirm that the page's module is listed before the sheet is shown,
-  and that a dialog from `shell32.dll` gets its template ID.
+- **No hook on a function that can wait or run a message loop** (constitution I, FR-023a).
+  The `user32` dialog functions (`CreateDialogParamW`, `DialogBoxParamW` and the `Indirect`
+  variants), `comctl32` `PropertySheetW` / `CreatePropertySheetPageW` and `kernelbase`
+  `LoadLibraryExW` are no longer hooked. `CreateDialog*` sends `WM_INITDIALOG`, whose handler
+  may open a message box; `LoadLibraryExW` runs `DllMain`s under the loader lock. Any of them
+  can still be on a thread's stack when the mod unloads.
+- **Only hooks**: `kernelbase` `FindResourceExW` and `FindResourceW`, which return at once.
+  When the type is `RT_DIALOG` and the call succeeds, the hook remembers `{module, name,
+  tick}` in a thread-local list (last 16 lookups; string names interned in a process-wide
+  table so the list holds pointers only) and **arms** a `WH_CBT` hook on the calling thread
+  if it is not armed. Cost outside dialogs: one comparison per call.
+- **The CBT hook records the template.** At `HCBT_CREATEWND` for a window of class `#32770`,
+  the template is the most recent remembered lookup whose module equals
+  `CREATESTRUCT.hInstance` (spike finding 3); that lookup is removed and `{HWND → template}`
+  goes into the dialog facts store. No match → nothing recorded (template "unknown"). At each
+  callback, lookups older than 2 s are dropped; when the list is empty, the hook disarms
+  itself after `CallNextHookEx` returns. Lookups never followed by a dialog therefore cost
+  one callback per window created on that thread, until the next creation after they
+  expire. The CBT hook changes nothing.
+- **Unload** (`Wh_ModUninit`): set a "stopping" flag (hooks and callbacks record nothing),
+  unhook every armed CBT hook from a process-wide registry `{threadId → HHOOK}` (from the
+  unloading thread), then wait until no `CbtProc` is running (an in-flight counter
+  incremented on entry and decremented as the last statement before `return`). The wait
+  never ends early: a callback still inside `CallNextHookEx` (another mod's hook) would
+  return into freed code. It is logged once if it lasts over 1 s. The facts store is cleared.
+- **Hosted pages need no capture.** A page of a property sheet (or any child dialog) is a
+  `#32770` with `WS_CHILD`; its module is its own `GWLP_HINSTANCE` (spike finding 5) and its
+  template comes from the CBT hook like any dialog. It is classified when first asked, like
+  any window; page windows are created hidden when their tab is first selected (finding 4),
+  so a later spec that asks at creation knows the page's level before it is shown
+  (FR-013a). The sheet's level no longer depends on its pages: the page list, `SheetPagesOf`,
+  `OnSheetPagesChanged`, the "late page" path and the `LoweredByPage` reason go away.
+- **Cap chain** (FR-013, FR-013a): a window's **host** is its nearest ancestor below the
+  top-level window that is a hosted page (class `#32770` with `WS_CHILD`), else its
+  top-level window. Effective level = min(own level, host's effective level). Reason
+  `CappedByPage` when the host is a page and lowered the level, `CappedByTopLevel` when the
+  host is the top-level window. A page is capped by its own host the same way, so nesting
+  works. Locked shell surfaces are still decided by the top-level identity first.
+- **Consequence for rules**: every property sheet frame is `#32770` created with
+  `HINSTANCE` = `comctl32.dll`, template `1006` (finding 2), so the frame of a Properties
+  dialog and of System Properties have the same identity apart from the process. A rule
+  naming `sysdm.cpl` matches that sheet's pages, not its frame. Which sheets a later spec
+  styles is decided by a rule for the frame (`module=comctl32.dll; template=1006`, narrowed
+  by process) plus one per page; a page left `native` inside a styled frame stays as Windows
+  draws it (constitution I, principle 2.0.0). Nothing changes in `docs/compatibility.md`
+  now, since every level in this spec is still only reported.
+- **Verify** (re-spike on `spike/20261113-unload-safe-dialogs`, logging only, never merged):
+  (a) with only the `FindResource*` hooks and the armed CBT hook, the Run dialog gets
+  `shell32.dll` `1003`, a sheet frame `comctl32.dll` `1006`, pages their own IDs (including
+  `rarext.dll` `"EXTARCINFODLG"`), Folder Options too; (b) how often a `RT_DIALOG` lookup is
+  not followed by a dialog, and how long the hook stays armed in normal use; (c)
+  `UnhookWindowsHookEx` called from the unloading thread removes a CBT hook armed on another
+  thread (the hook stops firing); (d) disabling the mod with the Run dialog and a Properties
+  dialog open, then closing them, does not crash Explorer and Windhawk does not stay on "mod
+  task in progress"; (e) page windows are created without `WS_VISIBLE` and a control's
+  ancestor chain is control → page → frame.
 
 **Spike findings** (T032, 2026-11-13, branch `spike/20261112-dialog-capture`, Windows 11
-build 26300, comctl32 6.0.26100.9711). The spike hooked the functions above plus
+build 26300, comctl32 6.0.26100.9711; still the evidence for the decision above). The spike
+hooked the four `user32` dialog functions, `PropertySheetW`, `CreatePropertySheetPageW`, plus
 `kernelbase` `FindResourceW` / `FindResourceExW`, and logged only. Cases: Run dialog; Properties
 of a WinRAR self-extracting `.exe` (third-party page from `rarext.dll`) and of a signed `.exe`;
 Properties of drive C: (Quota page from `dskquoui.dll`); Folder Options.
@@ -298,34 +332,24 @@ Properties of drive C: (Quota page from `dskquoui.dll`); Folder Options.
    one started by `explorer.exe <folder>`, which hands off and exits) loaded the mod before
    `comctl32.dll`. In the main `explorer.exe` only the v6 `comctl32.dll` was loaded.
 
-**Revision** (approved by the maintainer on 2026-11-13; it replaces the bullets of the decision above where they differ, and T033 follows it):
-
-- Add hooks on `kernelbase` `FindResourceExW` and `FindResourceW`: when the type is
-  `RT_DIALOG` and the call succeeds, remember `{module, name}` in a small thread-local list
-  (last 16 lookups). Cost outside dialogs: one comparison per call.
-- In the four `user32` dialog hooks, the template is the call's argument for the non-indirect
-  variants; for the indirect variants it is the most recent remembered lookup whose module
-  equals the call's `HINSTANCE`, or "unknown" if there is none. The list is cleared when the
-  outermost dialog call on the thread returns.
-- The sheet window is the **first** `#32770` created on the thread during `PropertySheetW`,
-  whatever hooked call it is nested in (it is created inside `CreateDialogIndirectParamW`).
-- If `comctl32.dll` is not loaded at `Wh_ModInit`, hook `PropertySheetW` and
-  `CreatePropertySheetPageW` when it loads; only the instance(s) actually loaded are hooked.
-  **Chosen in T033**: Windhawk has no module-load notification, so a `kernelbase`
-  `LoadLibraryExW` hook checks, after each successful load that is not data-only, the two
-  places comctl32 can be: `GetModuleHandleW(L"comctl32.dll")` (the instance the activation
-  context resolves, v6 in `explorer.exe`) and the system32 path (v5). Two loader lookups per
-  load; enumerating every module (`EnumProcessModules`) was rejected because it reads the
-  module list one entry at a time. A comctl32 loaded through a delay-load import (which does
-  not go through `LoadLibraryExW`) is hooked at the next load of any library.
-- Per-thread state (remembered lookups, the call stack, the CBT hook) is trivially
-  destructible: a `thread_local` destructor would run at thread exit, possibly after the mod
-  is unloaded. String resource names are interned in a process-wide table so the per-thread
-  list holds pointers only. `Wh_ModUninit` removes the CBT hooks still installed on any thread.
+**Superseded designs** (kept for history). The first design hooked the four `user32` dialog
+functions and `comctl32` `PropertySheetW` / `CreatePropertySheetPageW`, armed the CBT hook
+for the duration of each dialog call, and lowered a sheet to the lowest level among its
+listed pages before it was shown. The T032 revision added the `FindResource*` hooks for
+indirect templates and a `LoadLibraryExW` hook to catch `comctl32` loaded late. T050 run 1
+showed the flaw: `DialogBoxIndirectParamW` runs the Run dialog's modal loop with our hook
+frame below it; after unload, closing the dialog returned into freed code and crashed
+Explorer (handoff, "T050 live acceptance, run 1"). Constitution 2.0.0 then removed the need
+to know pages before the sheet is shown, so the comctl32 hooks had no purpose left.
 
 **Alternatives**: wrapping the dialog procedure to catch `WM_INITDIALOG` (changes the window's
 `DWLP_DLGPROC`, even if briefly; rejected by FR-008); a global `SetWinEventHook` for object
-creation (asynchronous, arrives after the window is shown).
+creation (asynchronous, arrives after the window is shown); hooking `CreateWindowExW`
+(sends `WM_CREATE`, whose handler can run a modal loop, and is called for every window);
+keeping the CBT hook armed for the life of every thread (one callback per window creation
+everywhere, for no gain); pinning the DLL during each CBT callback (the reference must be
+released from outside the DLL, for example by a thread started at `FreeLibrary`, which is
+heavy for a window-creation callback).
 
 ## R9. Built-in rules from `docs/compatibility.md` (FR-014, FR-015)
 
@@ -435,6 +459,8 @@ multiplies type sizes and line heights only (FR-026). Colors are stored as ARGB.
 ## R16. Windows internals used
 
 None. Every Windows function in this plan is documented (Win32, WinRT, DirectWrite,
-Direct2D); hooks target documented exports of `user32.dll` and `comctl32.dll`. Class names
-in the built-in rules (R9) are observed values, not APIs; when Windows changes one, the rule
-stops matching and the window falls back to `native`, which is safe.
+Direct2D); function hooks target only the documented `kernelbase.dll` exports
+`FindResourceExW` and `FindResourceW`, and the thread `WH_CBT` hook is the documented
+`SetWindowsHookExW` (R8). Class names in the built-in rules (R9) are observed values, not
+APIs; when Windows changes one, the rule stops matching and the window falls back to
+`native`, which is safe.

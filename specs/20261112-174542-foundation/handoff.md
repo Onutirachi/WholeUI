@@ -1,6 +1,6 @@
 # Handoff: Foundation
 
-**Updated**: 2026-11-13 (Phase 6: T049 done) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
+**Updated**: 2026-11-13 (R8 replanned after T050 run 1) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
 
 ## State
 
@@ -80,8 +80,9 @@ not installed locally; the scripts use nothing newer than 3.9.
 
 ## Open questions
 
-- Still to verify: `$name:pt-BR` honored in settings (R3, acceptance step 10); property
-  sheet page capture on a live system (R8, spike branch).
+- Still to verify: `$name:pt-BR` honored in settings (R3, acceptance step 10); template
+  capture without dialog hooks and safe unload with modal dialogs open (R8 **Verify** a–e,
+  T055).
 
 ## US2 APIs (tests and implementation, T020–T027)
 
@@ -527,21 +528,20 @@ stylers, elastic pill, multi-tray, shell-flyout-positions, others).
 
 1. T048 is committed (`feat: wire diagnostic mode into the mod`, not pushed). T044–T047 and
    earlier US3/US4 commits are also unpushed. T049 changed only handoff.md and tasks.md.
-2. T050 run 1 found the unload crash above. **The maintainer approved the fix** (2026-11-13).
-   Next: re-spike on its own branch (`spike/20261113-unload-safe-dialogs`), update R8 / plan /
-   tasks, add the "never hook a function that can wait or run a message loop" rule to
-   AGENTS.md, implement, and run T050 again from step 1.
-3. **Constitution 2.0.0 (approved in principle, 2026-11-13, not committed)**: principle I is
-   now "never harder to read or use"; a whole hosted page (third-party Properties tab) may stay
-   as Windows draws it inside a handled window, single controls are never mixed; unloading
-   must be safe at any moment (no hook on a function that can wait or run a message loop).
-   The maintainer's reason: the real failure is an unreadable window (their screenshot of
-   Environment Variables under another mod: dark group titles, blank list headers), while a
-   native third-party page inside a dark frame stayed readable. Spec updated: clarification
-   2026-11-13, edge cases, FR-013a (each page its own level, capped by host; controls capped
-   by their page), new FR-023a, SC-008 and acceptance step 8. README line 5 and AGENTS.md rule
-   added. Still to update in the plan step: research R8 (no `PropertySheetW` or modal
-   hooks; pages need not be known before the sheet is shown, so `PageList`,
-   `OnSheetPagesChanged` and `LoweredByPage` go away, replaced by a page cap), data-model.md,
-   contracts engine-api.md and compatibility-doc.md (`lowered by page` reason), quickstart
-   step 11, tasks (new tasks after T050).
+2. **Constitution 2.0.0** is committed (`92e6101`) with the spec changes (FR-013a, FR-023a,
+   SC-008, acceptance step 8), README line 5 and the AGENTS.md rule.
+3. **R8 replanned (2026-11-13, not committed, waiting for the maintainer's review)**: research
+   R8 has a revised decision (only `FindResourceExW` / `FindResourceW` hooked; they arm a
+   thread CBT hook that records `HWND → template` for `#32770` by module and disarms itself;
+   unload unhooks every armed CBT hook and waits for running callbacks; no page capture; cap
+   chain control → nearest hosted page → top-level, reason `CappedByPage`), plus a
+   "Superseded designs" note and a **Verify** list (a–e) for the re-spike. R6, R7, R16,
+   plan.md, data-model.md, contracts engine-api.md (`ClassifyIdentity` takes pages; no
+   `OnSheetPagesChanged`, no `pageModule`) and compatibility-doc.md (`capped by page`),
+   quickstart step 11 and tasks.md (new Phase 7, T055–T060; Polish is now Phase 8) are
+   updated. Points for the maintainer to confirm: the 2 s lookup expiry; the unload wait has
+   no time limit (an unload that waits beats a crash); a property sheet frame is always
+   `comctl32.dll` `1006`, so later specs choose sheets by a frame rule plus page rules.
+4. Next: maintainer reviews and commits the replan (`docs: replan dialog capture for safe
+   unload`), then T055 (re-spike on `spike/20261113-unload-safe-dialogs`), then T056–T060,
+   then T050 again from step 1.

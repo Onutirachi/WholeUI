@@ -53,7 +53,9 @@ Windhawk 2.0.0-alpha.6.
 All unknowns from the handoff are resolved in research. The toolchain (clang 20.1.3,
 mingw-w64 13, UCRT) and the WinRT header were verified on the maintainer's machine (R1, R11).
 Two facts are confirmed during implementation (marked **Verify** in research):
-`$name:pt-BR` in settings (R3) and the property sheet page capture (R8).
+`$name:pt-BR` in settings (R3) and the dialog template capture without dialog hooks (R8,
+revised 2026-11-13 after live acceptance found that hooking modal dialog functions makes
+unloading unsafe).
 
 ## Constitution Check
 
@@ -61,7 +63,7 @@ Two facts are confirmed during implementation (marked **Verify** in research):
 
 | Principle | Check | Status |
 |---|---|---|
-| I. Never worse than native | No window is changed; no system-wide calls; every failure → `native` and logged; unload releases hooks, thread, overlay, caches. The only observer hooks are scoped (CBT hook on one thread for one call). | Pass |
+| I. Never worse than native | No window is changed; no system-wide calls; every failure → `native` and logged; unload releases hooks, thread, overlay, caches. The only function hooks are `FindResourceExW` / `FindResourceW`, which never wait; the CBT hook is per thread, armed by a dialog lookup and disarmed after the dialog is created; unload removes the CBT hooks and waits for running callbacks, so it is safe at any moment (FR-023a, R8). | Pass |
 | II. Compatibility list | Identity = process, module, class, template; no titles. Built-in rules generated from `docs/compatibility.md`; unknown → `native`; overrides in S6; diagnostic mode S7. | Pass |
 | III. One design system | One token set, read-only to features; follows accent, app mode, text size. The overlay uses the tokens. | Pass |
 | IV. Opinionated and lean | Only S6 and S7, both planned in `docs/product.md`. Copy shortcut fixed, not a setting. | Pass |
@@ -114,7 +116,7 @@ src/
 ├── compat/
 │   ├── rules.h / .cpp        # PURE: Level, Rule, RuleSet, classify()
 │   ├── identity.h / .cpp     # reads identity of an HWND (in- and cross-process)
-│   ├── dialog_hooks.h / .cpp # dialog and property sheet hooks, facts store
+│   ├── dialog_hooks.h / .cpp # FindResource hooks, thread CBT hook, dialog facts store
 │   └── engine.h / .cpp       # cache, locking, listeners (contracts/engine-api.md)
 ├── tokens/
 │   ├── tokens.h / .cpp       # PURE: TokenInputs, Tokens, Resolve()
@@ -163,7 +165,9 @@ the order `src/main.cpp` includes them.
 2. Pure modules with tests: rules, overrides parser, tokens, format.
 3. `docs/compatibility.md` new format and generated built-in rules.
 4. Identity reading, engine with cache and listeners, settings wiring.
-5. Spike branch for dialog and property sheet capture (R8), then `dialog_hooks`.
+5. Spike branch for dialog and property sheet capture (R8), then `dialog_hooks`. Reworked
+   after T050 run 1: re-spike, then dialog hooks without modal functions and the page cap
+   (R8 revised decision).
 6. Token system adapter (UISettings, font check), worker thread.
 7. Diagnostic overlay and copy shortcut.
 8. Live acceptance (quickstart), handoff with Windows build and results.

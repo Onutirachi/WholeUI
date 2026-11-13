@@ -48,7 +48,7 @@ Ctrl+Alt+Shift+C copies
 ```
 
 `<reason>` is one of: `default`, `rule`, `override`, `shell surface`, `capped by top-level`,
-`lowered by page <module>`, `failure`; `· <rule origin>` is left out when no rule matched. Any
+`capped by page`, `failure`; `· <rule origin>` is left out when no rule matched. Any
 unreadable (or empty) field shows `unknown`. When the window is itself top-level, the
 Top-level line repeats it.
 

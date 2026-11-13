@@ -11,24 +11,22 @@ namespace wholeui::compat {
 
 enum class Level : uint8_t { Native, Visual, Full };
 
-// rules.h has the pure Classification (with a Rule pointer into the rule set and, for
-// LoweredByPage, a pointer to the first lowest page). WindowClassification, also in rules.h
-// (PURE, so diagnostic/format can use it), is the copy made by CopyOf: it stays valid after
-// the rule set and pages are replaced.
+// rules.h has the pure Classification (with a Rule pointer into the rule set).
+// WindowClassification, also in rules.h (PURE, so diagnostic/format can use it), is the copy
+// made by CopyOf: it stays valid after the rule set is replaced.
 struct WindowClassification {
     Level level;            // effective level
     Level ownLevel;         // before top-level / page caps
-    Reason reason;          // Default, Rule, Locked, CappedByTopLevel, LoweredByPage, Failure
+    Reason reason;          // Default, Rule, Locked, CappedByTopLevel, CappedByPage, Failure
     RuleSource ruleSource;  // meaningful only when ruleOrigin is not empty
     std::wstring ruleOrigin;// empty when no rule
-    Field pageModule;       // LoweredByPage: module of the page that lowered it (may be Unknown)
 };
 
 // Safe from any thread. Never throws. Any failure yields Level::Native (FR-018).
 WindowClassification Classify(HWND hwnd);
 Level LevelOf(HWND hwnd);   // Classify(hwnd).level
 
-// Called after a cached window's effective level changes (settings edited, late page).
+// Called after a cached window's effective level changes (settings edited).
 // The callback runs on the thread that caused the change, without engine locks held.
 // Returns a token; Unsubscribe before the subscribing module unloads.
 using LevelChangedFn = void (*)(HWND hwnd, Level oldLevel, Level newLevel, void* context);
@@ -49,18 +47,12 @@ Used by `src/diagnostic/overlay.cpp` only (FR-021, US3 scenario 5):
 
 ```cpp
 // The level the current rules give a window of another process, from identities read with
-// ReadIdentity. Rules only: no cache, no listeners, no property sheet pages; Unknown fields
-// match no rule. topLevel == nullptr: the window is itself top-level. Never throws.
+// ReadIdentity. Rules only: no cache, no listeners; Unknown fields match no rule. `pages`
+// are the hosted pages between the window and its top-level window, nearest first (may be
+// empty). topLevel == nullptr: the window is itself top-level. Never throws.
 WindowClassification ClassifyIdentity(const WindowIdentity& window,
+                                      std::span<const WindowIdentity> pages,
                                       const WindowIdentity* topLevel) noexcept;
-```
-
-Used by `src/compat/dialog_hooks.cpp` only:
-
-```cpp
-// A page from a module not listed before was added to a sheet after it was created
-// (FR-013a): re-classify the cached sheet and its children, notify changed levels.
-void OnSheetPagesChanged(HWND sheet) noexcept;
 ```
 
 Rules for callers:
@@ -72,14 +64,14 @@ Rules for callers:
   answers `Native`/`Failure` without caching it (a verbose line, not a warning). Ask again
   once creation returns (`WM_CREATE` or later).
 
-Classification reads the window, its top-level window and, when the top-level window is a
-property sheet the dialog hooks saw, the sheet's pages (`SheetPagesOf`; an incomplete list
-counts as one page with every field Unknown, which lowers the sheet to `Native`). A dialog's
-template comes from `DialogTemplateOf`. The engine never holds its lock while it takes the
-dialog store's lock, and `dialog_hooks` never calls the engine while it holds its own. While
-diagnostic mode is on, each classification (not a cache hit) and each level change writes one
-`log::Verbose` line with the level, own level, reason, rule, identity fields, top-level window
-and page count; never a title.
+Classification reads the window, the hosted pages above it (ancestors of class `#32770`
+with `WS_CHILD`, below the top-level window) and its top-level window; a child is capped by
+its nearest page, a page by its own host, and the outermost by the top-level window
+(FR-013a, research R8). A dialog's template comes from `DialogTemplateOf`. The engine never
+holds its lock while it takes the dialog store's lock, and `dialog_hooks` never calls the
+engine. While diagnostic mode is on, each classification (not a cache hit) and each level
+change writes one `log::Verbose` line with the level, own level, reason, rule, identity
+fields, top-level window and nearest page (when there is one); never a title.
 
 ## Design tokens (`src/tokens/tokens.h`, `src/tokens/runtime.h`)
 

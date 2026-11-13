@@ -44,7 +44,7 @@ names the source file (`// ---- src/... ----` markers map generated lines back t
 | 8 | Add `class=Shell_TrayWnd; level=full` | Taskbar stays `native · shell surface` | FR-015 |
 | 9 | Toggle dark/light mode, change accent, set text size 125 % | Log shows tokens re-resolved with the new values | US4 |
 | 10 | Switch Windhawk to Português (Brasil) | Name, description, settings in Portuguese; readme has a Portuguese section | FR-009, research R3 |
-| 11 | Turn diagnostic mode off; then disable the mod with Explorer open | Overlay gone at once; windows keep working, no Explorer restart | FR-023, SC-008 |
+| 11 | Turn diagnostic mode off; open an Explorer window, the Run dialog and a file's Properties dialog; disable the mod; then close the Run and Properties dialogs | Overlay gone at once; Windhawk finishes disabling at once (no lasting "mod task in progress"); the windows keep working and close normally; no Explorer restart or crash | FR-023, FR-023a, SC-008 |
 
 Record the Windows build and the results in `handoff.md`.
 

@@ -22,9 +22,10 @@ Full`. "Lowest" means `std::min`.
 `Field` is either a known value or `Unknown`. `TemplateField` is a known value, `Unknown` or
 `NotADialog`. **An `Unknown` field never matches a rule that names it** (spec edge cases).
 
-Identity also carries, for classification only: `isTopLevel` (bool) and the identity of the
-top-level window (`GetAncestor(GA_ROOT)`), and, for a property sheet, the identities of its
-known pages.
+Identity also carries, for classification only: `isTopLevel` (bool), the identity of the
+top-level window (`GetAncestor(GA_ROOT)`), and the identities of the **hosted pages** between
+the window and its top-level window, nearest first. A hosted page is an ancestor of class
+`#32770` with `WS_CHILD` (a property sheet page or any child dialog; research R8).
 
 ## Rule
 
@@ -54,10 +55,9 @@ number. Replaced as a whole when settings change.
 | Field | Type | Notes |
 |---|---|---|
 | `level` | `Level` | Effective level |
-| `reason` | enum | `Default` (no rule), `Rule`, `Locked` (shell surface), `CappedByTopLevel` (FR-013), `LoweredByPage` (FR-013a), `Failure` (FR-018) |
+| `reason` | enum | `Default` (no rule), `Rule`, `Locked` (shell surface), `CappedByTopLevel` (FR-013), `CappedByPage` (FR-013a), `Failure` (FR-018) |
 | `rule` | `const Rule*` or none | The winning rule, if any |
 | `ownLevel` | `Level` | Level before the caps, shown by diagnostic mode |
-| `page` | page identity or none | `LoweredByPage` only: the first page with the lowest level; its module is shown by diagnostic mode (`lowered by page <module>`) |
 
 ### Resolution order (pure function `classify(identity, ruleSet)`)
 
@@ -67,10 +67,12 @@ number. Replaced as a whole when settings change.
    consulted.
 3. Own level: among matching rules, highest `specificity`; at equal specificity `Override`
    over `BuiltIn`; remaining tie → lowest `level`. No match → `Native`, reason `Default`.
-4. For a top-level window with known pages: level = min(own, each page's own level) → reason
-   `LoweredByPage` when lowered.
-5. For a child window: level = min(own, effective level of its top-level) → reason
-   `CappedByTopLevel` when lowered.
+4. For a child window: its **host** is the nearest hosted page above it, else its top-level
+   window. Level = min(own, effective level of the host), the host's effective level being
+   computed the same way (pages nest). Reason `CappedByPage` when the host is a page and
+   lowered the level, `CappedByTopLevel` when the host is the top-level window and lowered
+   it. A page left `native` inside a handled host stays as Windows draws it, as a whole
+   (FR-013a).
 
 ### Cache entry
 
@@ -81,8 +83,9 @@ window is re-classified and listeners are told about each window whose level cha
 
 ### Dialog facts store
 
-`HWND → { module, templateId }` for dialogs seen by the creation hooks, and
-`HWND (sheet) → [ { module, templateId } … ]` for property sheet pages (research R8).
+`HWND → templateId` for dialogs whose creation the thread CBT hook saw, matched to the most
+recent `RT_DIALOG` lookup for the dialog's module on the creating thread (research R8).
+Entries for destroyed windows are swept when the store grows.
 
 ## Design token set
 
@@ -178,5 +181,5 @@ system corrects it here (and in the code), not locally.
   notify listeners of changed levels → start or stop diagnostic mode.
 - **System mode / accent / text scale changed** → `resolveTokens` → swap token snapshot →
   log the new mode, accent and scale → notify token listeners.
-- **Late page added to a sheet** → sheet level may drop → notify listeners.
-- **Unload** → stop worker thread (overlay, UISettings events) → clear caches and stores.
+- **Unload** → stop worker thread (overlay, UISettings events) → stop recording, unhook the
+  thread CBT hooks, wait for running CBT callbacks → clear caches and stores.
