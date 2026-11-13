@@ -1,6 +1,6 @@
 # Handoff: Foundation
 
-**Updated**: 2026-11-13 (US2: T033 dialog hooks) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
+**Updated**: 2026-11-13 (US2 complete: T034 dialogs wired into classification) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
 
 ## State
 
@@ -8,7 +8,9 @@ Spec, plan, tasks, Phase 1, Phase 2 and US1 (T012–T019) done and committed. Th
 GitHub with draft pull request #1; CI ("Build and test") passes in about 35 s. US2 tests and
 pure logic (T020–T027) are committed (not pushed yet). T028–T030 (settings, identity, engine)
 and T031 (wiring in `main.cpp`) are committed as `feat: add settings, window identity and
-compatibility engine` (not pushed yet).
+compatibility engine` (not pushed yet). T033 committed as `feat: add dialog and property
+sheet hooks`. T034 committed as `feat: wire dialog facts into classification`; US2 is complete.
+None of the US2 commits are pushed yet.
 
 US1 results kept for reference: `build.py` writes in 3 ms, `--compile` about 1.2 s (SC-001
 < 30 s met); `test.py` 7/7 C++ and 24/24 Python; `--install` loads the DLL in `explorer.exe`
@@ -17,27 +19,27 @@ not installed locally; the scripts use nothing newer than 3.9.
 
 ## Done in the last session
 
-- T033: `src/compat/dialog_hooks.h/.cpp` per research R8 "Revision". Public:
-  `InstallDialogHooks()` (Wh_ModInit, before `ApplySettings`), `UninstallDialogHooks()`
-  (Wh_ModUninit, before `ResetEngine`), `DialogTemplateOf(HWND) → TemplateField`,
-  `SheetPagesOf(HWND) → SheetPages { known, incomplete, pages }` (page identities: own process,
-  page module, `#32770`, template). Late page → `compat::OnSheetPagesChanged(sheet)` (new in
-  engine; re-evaluates the sheet and cache entries whose top-level is the sheet, notifies;
-  entries now keep `topLevelHwnd`). Contract engine-api.md updated.
-- Internals live in `namespace wholeui::compat::dialogs { namespace { … } }`: the amalgamation
-  shares one anonymous namespace per named namespace across all `.cpp` files. SRWLOCK guards
-  moved to `src/core/lock.h` (`wholeui::SharedLock` / `ExclusiveLock`). `identity.h` now
-  exposes `ModuleNameOf(HMODULE)` and `CurrentProcessName()`.
-- Late comctl32: `kernelbase` `LoadLibraryExW` hook + two `GetModuleHandleW` lookups (research
-  R8 "Chosen in T033").
-- Live check (diagnostic mode on, verbose `[dialogs]` lines): Run → `template 1003`; Properties
-  of a WinRAR SFX `.exe` → sheet with 7 pages (shell32 1041, acppage 5011, rarext
-  EXTARCINFODLG, cryptui 145, aclui 103, shell32 16816, twext 102) logged before the frame
-  (`1006`), and each page window got its template when its tab opened; drive C: (7 pages incl.
-  dskquoui 108, ntshrui 1000) and Folder Options (shell32 29959–29961) likewise. No `page
-  added later`, no warnings. A nested child dialog in a page (shell32 1410) is correctly not
-  taken for a page. Not observed: unloading the mod while a sheet is open.
-- Results: `tools/test.py` 57/57 C++ and 43/43 Python; `build.py --check --compile` clean.
+- T034: `ReadIdentity` takes a `#32770`'s template from `DialogTemplateOf` (other processes
+  stay Unknown). The engine reads `SheetPagesOf(topLevel)` outside its lock and keeps the
+  pages in each cache entry as a shared `PageList` (sheet and its children share one list);
+  `incomplete` adds one all-Unknown page (lowers the sheet to Native). `SetRuleSet` re-uses the
+  stored pages; `OnSheetPagesChanged` re-reads the sheet's pages, stores them in the sheet's
+  and its children's entries and bumps a `pagesEpoch`, so a classification that read pages
+  before the change is not cached. One `log::Verbose` line per classification (level, own
+  level, reason, rule origin, process, module, class, template, top-level, page count) and one
+  per level change (`settings changed` / `sheet page added`).
+- Found live: at `HCBT_CREATEWND` a child is not linked to its parent yet (`GetParent` is the
+  desktop, `GA_ROOT` is the window itself), so a query during creation would cache a child as
+  top-level and skip the cap. Now a `WS_CHILD` window whose top-level is itself is
+  `Native`/`Failure`, not cached, with a verbose line (expected case, not a warning).
+  Contract engine-api.md "Rules for callers" updated.
+- Live check (temporary code, reverted: classify each dialog at creation and 300 ms later;
+  test overrides `module=comctl32.dll; level=full` and `module=shell32.dll; level=visual`,
+  removed): Run → `visual` (rule), template 1003; WinRAR SFX Properties sheet → own `full`,
+  `lowered by page`, 7 pages; shell32 pages 1041 / 16816 → own `visual`, `capped by
+  top-level` to `native`, top-level = the sheet; other pages `native` default.
+- Results: `tools/test.py` 57/57 C++ and 43/43 Python; `build.py --check --compile` clean;
+  the clean build is installed (no overrides, diagnostic mode on).
 
 ## Decisions
 
@@ -166,7 +168,4 @@ local install).
 
 ## Next step
 
-1. T034: feed `DialogTemplateOf` into `ReadIdentity` (template for `#32770`) and
-   `SheetPagesOf` into the engine's `Evaluate` (pages span; `incomplete` → treat as an
-   unknown page), one `log::Verbose` line per classification. Lock order: engine lock, then
-   the dialog store lock (dialog_hooks never calls the engine while holding its lock).
+1. Phase 5 (US4, design tokens): T035 tests, then T036–T040.

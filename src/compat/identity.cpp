@@ -6,6 +6,8 @@
 #include <string>
 #include <string_view>
 
+#include "dialog_hooks.h"
+
 namespace wholeui::compat {
 
 namespace {
@@ -126,8 +128,10 @@ WindowIdentity ReadIdentity(HWND hwnd) {
     identity.process = ProcessOf(pid);
     identity.module = ModuleOf(hwnd, pid);
     identity.windowClass = ClassOf(hwnd);
-    if (identity.windowClass.known && identity.windowClass.value != kDialogClass) {
-        identity.templateId = TemplateField::NotADialog();
+    if (identity.windowClass.known) {
+        identity.templateId = identity.windowClass.value == kDialogClass
+                                  ? DialogTemplateOf(hwnd)  // Unknown for other processes
+                                  : TemplateField::NotADialog();
     }
     return identity;
 }

@@ -54,6 +54,19 @@ Rules for callers:
 
 - Ask before changing a window, every time it matters (cheap: cached).
 - On `newLevel < oldLevel`, restore the window to how Windows draws it (constitution I).
+- Do not rely on the answer for a child window while it is being created (`HCBT_CREATEWND`,
+  `WM_NCCREATE`): it is not linked to its parent yet and looks top-level, so the engine
+  answers `Native`/`Failure` without caching it (a verbose line, not a warning). Ask again
+  once creation returns (`WM_CREATE` or later).
+
+Classification reads the window, its top-level window and, when the top-level window is a
+property sheet the dialog hooks saw, the sheet's pages (`SheetPagesOf`; an incomplete list
+counts as one page with every field Unknown, which lowers the sheet to `Native`). A dialog's
+template comes from `DialogTemplateOf`. The engine never holds its lock while it takes the
+dialog store's lock, and `dialog_hooks` never calls the engine while it holds its own. While
+diagnostic mode is on, each classification (not a cache hit) and each level change writes one
+`log::Verbose` line with the level, own level, reason, rule, identity fields, top-level window
+and page count; never a title.
 
 ## Design tokens (`src/tokens/tokens.h`)
 

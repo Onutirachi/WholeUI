@@ -12,7 +12,7 @@ namespace wholeui::compat {
 // The identity of `hwnd`, in this process or another one. A field that cannot be read is
 // Unknown; `failed` is set only when the window itself is invalid (FR-018). Process and
 // module are lower-case file names without a path. The template is NotADialog for any class
-// but #32770, and Unknown for a dialog (the dialog facts store fills it in, T034).
+// but #32770; for a dialog it is the template the dialog hooks recorded, else Unknown.
 // Throws only std::bad_alloc; the engine turns that into a Failure.
 WindowIdentity ReadIdentity(HWND hwnd);
 
