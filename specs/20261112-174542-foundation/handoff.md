@@ -1,6 +1,6 @@
 # Handoff: Foundation
 
-**Updated**: 2026-11-13 (US3: T041–T042 committed) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
+**Updated**: 2026-11-13 (US3: T043 committed) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
 
 ## State
 
@@ -317,10 +317,22 @@ Tests in `tests/unit/format_test.cpp` (15). Included in `main.cpp`, not called y
 - Results: `tools/test.py` 91/91 C++, 43/43 Python; `build.py --check --compile` clean.
   Not installed (nothing calls it).
 
+## T043 classify without a window (2026-11-13)
+
+`compat::ClassifyIdentity(const WindowIdentity& window, const WindowIdentity* topLevel)
+noexcept` in engine.h / engine.cpp: takes the current rule set under the shared lock, then
+`CopyOf(Classify(window, topLevel, {}, *rules))` (the `shared_ptr` keeps the rules alive for
+`CopyOf`). No cache, no listeners, no pages (other processes' sheets are never seen); Unknown
+fields already match no rule in `rules.cpp`. Before the first `SetRuleSet` → `Native`/`Default`;
+exception → `Native`/`Failure` with one `log::Warn`. T045 calls it for windows of other
+processes, after `ReadIdentity` on the window and `TopLevelOf` (pass `nullptr` when the window
+is its own top-level). Contract engine-api.md updated. Not unit-tested (engine is not PURE; the
+logic is `compat::Classify`, already covered).
+
+- Results: `build.py --check --compile` clean; `tools/test.py` 91/91 C++, 43/43 Python.
+
 ## Next step
 
-1. T041–T042 committed as `feat: add diagnostic text format`
-   (not pushed). US4 commit `feat: wire token system into mod lifecycle` is also unpushed.
-2. T043: "classify without a window" entry in the engine for other processes' identities
-   (can use `compat::Classify` + `CopyOf` on the current rule set, no cache), then T044
-   overlay window.
+1. T043 committed as `feat: classify identities of other processes` (not pushed). Earlier US3/US4 commits are
+   also unpushed.
+2. T044 overlay window (`src/diagnostic/overlay.h` / `.cpp`, research R14).

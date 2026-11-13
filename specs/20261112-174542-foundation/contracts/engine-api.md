@@ -45,6 +45,16 @@ void SetRuleSet(RuleSet rules);  // swap, re-classify cached windows, notify cha
 void ResetEngine();              // unload: drop the rule set, cache and listeners
 ```
 
+Used by `src/diagnostic/overlay.cpp` only (FR-021, US3 scenario 5):
+
+```cpp
+// The level the current rules give a window of another process, from identities read with
+// ReadIdentity. Rules only: no cache, no listeners, no property sheet pages; Unknown fields
+// match no rule. topLevel == nullptr: the window is itself top-level. Never throws.
+WindowClassification ClassifyIdentity(const WindowIdentity& window,
+                                      const WindowIdentity* topLevel) noexcept;
+```
+
 Used by `src/compat/dialog_hooks.cpp` only:
 
 ```cpp

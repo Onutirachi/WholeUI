@@ -241,6 +241,25 @@ Level LevelOf(HWND hwnd) noexcept {
     return Classify(hwnd).level;
 }
 
+WindowClassification ClassifyIdentity(const WindowIdentity& window,
+                                      const WindowIdentity* topLevel) noexcept {
+    try {
+        std::shared_ptr<const RuleSet> rules;
+        {
+            SharedLock lock(g_state.lock);
+            rules = g_state.rules;
+        }
+        if (!rules) {
+            return WindowClassification{};
+        }
+        // The shared_ptr keeps the rule set alive while CopyOf reads the matched rule.
+        return CopyOf(Classify(window, topLevel, {}, *rules));
+    } catch (...) {
+        log::Warn(L"compat", L"identity classification failed: exception");
+        return Failure();
+    }
+}
+
 SubscriptionId SubscribeLevelChanged(LevelChangedFn fn, void* context) {
     return g_listeners.Add(fn, context);
 }

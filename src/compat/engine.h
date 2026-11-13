@@ -23,6 +23,14 @@ namespace wholeui::compat {
 WindowClassification Classify(HWND hwnd) noexcept;
 Level LevelOf(HWND hwnd) noexcept;
 
+// For diagnostic mode: the level the current rules give a window of another process, from
+// identities read with ReadIdentity (FR-021, US3 scenario 5). Rules only: no cache, no
+// listeners, no property sheet pages (only this process's sheets are seen); Unknown fields
+// match no rule. `topLevel` is nullptr when the window is itself top-level. Safe from any
+// thread; never throws (failure: Native/Failure); before the first SetRuleSet, Native/Default.
+WindowClassification ClassifyIdentity(const WindowIdentity& window,
+                                      const WindowIdentity* topLevel) noexcept;
+
 // Called after a cached window's effective level changes (settings edited, late page), on
 // the thread that caused the change, without engine locks held. Unsubscribe before the
 // subscribing module unloads. On newLevel < oldLevel, restore the window (constitution I).
