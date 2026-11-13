@@ -1,6 +1,6 @@
 # Handoff: Foundation
 
-**Updated**: 2026-11-13 (R8 replanned after T050 run 1) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
+**Updated**: 2026-11-13 (T055 re-spike done) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
 
 ## State
 
@@ -524,6 +524,27 @@ stylers, elastic pill, multi-tray, shell-flyout-positions, others).
   from step 1 again, with "disable with Run and Properties open, then close them" added to
   step 11.
 
+## T055 re-spike (2026-11-13)
+
+Done on `spike/20261113-unload-safe-dialogs` (`src/spike/unload_safe.cpp`, logging only;
+`main.cpp` calls `spike::Install` / `Uninstall` instead of the dialog hooks; never merged).
+Findings in research.md R8 "Re-spike findings": **no contradiction with the revised R8**.
+All 28 dialogs got their template (Run, two sheet frames, every page including `rarext`);
+the hook stays armed while a sheet sits idle (up to 16 s, ~100 windows), as designed;
+unhooking another thread's armed hook at unload works; **disabling with Run, Properties and
+Folder Options open, then using and closing them, did not crash Explorer** (same PIDs, no
+error event) and Windhawk did not hang. Two details folded into T058 / T059 and engine-api.md:
+record only the outermost `FindResource*` call (`FindResourceW` calls `FindResourceExW`), and
+walk hosted pages with `GA_PARENT` up to `GA_ROOT` (`GetParent` on a frame returns its owner).
+
+- The mod is **disabled** in Windhawk with the spike build installed. Do not re-enable it:
+  T060 installs the new build (re-enabling the committed build brings back the modal hooks).
+- Tools in this session's scratchpad: `probe.py` (Explorer dialogs, pages, ancestor chains,
+  from outside), `merge.py HH:MM:SS` (wholeui lines from every DBWIN listener log, merged),
+  `dbwin.py`. Five old listeners still run (stopping them was refused; the maintainer can end
+  those `python.exe`). Do not send keystrokes: the maintainer uses the machine; ask them to
+  open dialogs.
+
 ## Next step
 
 1. T048 is committed (`feat: wire diagnostic mode into the mod`, not pushed). T044–T047 and
@@ -542,6 +563,5 @@ stylers, elastic pill, multi-tray, shell-flyout-positions, others).
    updated. Points for the maintainer to confirm: the 2 s lookup expiry; the unload wait has
    no time limit (an unload that waits beats a crash); a property sheet frame is always
    `comctl32.dll` `1006`, so later specs choose sheets by a frame rule plus page rules.
-4. Next: maintainer reviews and commits the replan (`docs: replan dialog capture for safe
-   unload`), then T055 (re-spike on `spike/20261113-unload-safe-dialogs`), then T056–T060,
-   then T050 again from step 1.
+4. Replan committed (`59e86fe`). T055 done (above). Next: T056 (tests first), T057, T058,
+   T059, T060, then T050 again from step 1.

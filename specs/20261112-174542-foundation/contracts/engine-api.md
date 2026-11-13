@@ -65,7 +65,8 @@ Rules for callers:
   once creation returns (`WM_CREATE` or later).
 
 Classification reads the window, the hosted pages above it (ancestors of class `#32770`
-with `WS_CHILD`, below the top-level window) and its top-level window; a child is capped by
+with `WS_CHILD`, below the top-level window, walked with `GetAncestor(GA_PARENT)` up to
+`GA_ROOT`; `GetParent` on the top-level window returns its owner) and its top-level window; a child is capped by
 its nearest page, a page by its own host, and the outermost by the top-level window
 (FR-013a, research R8). A dialog's template comes from `DialogTemplateOf`. The engine never
 holds its lock while it takes the dialog store's lock, and `dialog_hooks` never calls the

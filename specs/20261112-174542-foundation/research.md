@@ -293,6 +293,43 @@ first design and its T032 revision, summarized under "Superseded designs" below)
   task in progress"; (e) page windows are created without `WS_VISIBLE` and a control's
   ancestor chain is control → page → frame.
 
+**Re-spike findings** (T055, 2026-11-13, branch `spike/20261113-unload-safe-dialogs`, Windows
+11 build 26300, three `explorer.exe`). The spike implemented the decision above with logging
+only: `FindResourceExW` / `FindResourceW` hooks, the armed thread CBT hook with the 2 s expiry,
+the `{threadId → HHOOK}` registry and the in-flight wait at unload. Cases: Run; Properties of a
+WinRAR self-extracting `.exe` (opened twice: all tabs clicked, and left on its first tab);
+Folder Options. Ancestor chains were read from outside the process. **No finding contradicts
+the decision.**
+
+- (a) **Every dialog got its template**: 28 matched, 0 `#32770` created without a matching
+  lookup. Run `shell32.dll` `#1003`; sheet frames (Properties and Folder Options)
+  `comctl32.dll` `#1006`; Properties pages `shell32` `#1041` and `#16816`, `cryptui` `#145`,
+  `aclui` `#103`, `twext` `#102`, `acppage` `#5011`, `rarext` `"EXTARCINFODLG"`; Folder
+  Options pages `shell32` `#29959`, `#29960`, `#29961`. The Run dialog's lookup comes through
+  `FindResourceW`, which calls `FindResourceExW` inside: **T058 records only the outer call**
+  (a per-thread depth counter), or every lookup through `FindResourceW` is remembered twice.
+- (b) **Unmatched lookups**: while building a sheet, comctl32 looks up every page's template
+  twice; none of these becomes a window (32 expired in the session). Each page window is
+  preceded by a fresh lookup at the moment its tab is first selected (0 ms old when matched),
+  so the expired ones are never needed. Because expiry runs only in a callback, the hook stays
+  armed while a sheet sits idle after it opens: 2.3 s, 7.5 s and 16 s observed, with 46 to 101
+  windows (58 to 115 callbacks) seen meanwhile. Elsewhere the hook armed and disarmed within
+  the same millisecond (1 callback). Cost accepted as designed.
+- (c) **Unhooking another thread's hook works**: at unload the Folder Options thread still had
+  its hook armed (lookups pending); `UnhookWindowsHookEx` from the unloading thread returned
+  success, and later window creation on that thread (tabs clicked, options changed after the
+  unload) did not reach the freed callback.
+- (d) **Unload with modal dialogs open is safe**: disabled with Run, a Properties sheet and
+  Folder Options open; all three processes unloaded at once (in-flight wait 0 ms), no process
+  kept the DLL, Windhawk did not stay on "mod task in progress". After closing every dialog,
+  Explorer did not crash or restart (same process IDs, no Application error event).
+- (e) **Pages are created hidden and the chain is control → page → frame**: every page
+  `#32770` was created with `WS_CHILD` and without `WS_VISIBLE`, parent = the frame. For a
+  control, `GetAncestor(GA_PARENT)` is its page and `GA_ROOT` is the frame. `GetParent` on the
+  frame returns its **owner** (`StubWindow32` for Properties, `CabinetWClass` for Folder
+  Options), so the walk for hosted pages must stop at the top-level window (`GA_ROOT`) and
+  use `GA_PARENT`, never follow `GetParent` past it.
+
 **Spike findings** (T032, 2026-11-13, branch `spike/20261112-dialog-capture`, Windows 11
 build 26300, comctl32 6.0.26100.9711; still the evidence for the decision above). The spike
 hooked the four `user32` dialog functions, `PropertySheetW`, `CreatePropertySheetPageW`, plus
