@@ -140,7 +140,7 @@ tools/
 ├── build.py                  # generate, --check, --compile (maps errors to src/), --install
 ├── test.py                   # build and run C++ tests, run Python tests
 ├── setup_toolchain.py        # fetch pinned llvm-mingw (+ windhawk_api.h) into build/toolchain
-├── toolchain.json            # pinned compiler version, URL, SHA-256, flags, mod libraries
+├── toolchain.json            # pinned compiler version, URL, SHA-256, flags
 └── windhawk-sdk/             # Windhawk headers + windhawk.lib for CI, if their license allows (R1)
 
 .github/workflows/ci.yml      # windows-latest: setup toolchain, --check, --compile, test.py

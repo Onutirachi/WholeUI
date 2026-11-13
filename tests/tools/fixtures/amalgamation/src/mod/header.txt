@@ -1,0 +1,6 @@
+// ==WindhawkMod==
+// @id              fixture
+// @name            Fixture
+// @version         1.2.3
+// @compilerOptions -lole32 -lgdi32
+// ==/WindhawkMod==

@@ -87,7 +87,8 @@ probe mod was compiled with `windhawk-cli mod install --file --disabled`, then r
   unchanged into `tools/windhawk-sdk/` with version, source and hashes; no `.def` route.
 - `tools/toolchain.json` pins the archive (URL, SHA-256 `f38c6a8c…3090`, size) and the flags;
   `tools/setup_toolchain.py` fetches it. A probe mod compiled with these flags, the SDK copy
-  and the mod libraries, with no warnings.
+  and the mod libraries, with no warnings. (T015 later dropped `mod_libraries` from
+  `toolchain.json`: `--compile` appends the header's `@compilerOptions`, as Windhawk does.)
 - Locally, `build.py --compile` uses `$WINDHAWK_ROOT\Compiler` directly, so the maintainer's
   check uses Windhawk's own files.
 
@@ -144,6 +145,28 @@ endings, UTF-8 without BOM, no timestamps, and each inlined file is preceded by 
 source file. `--install` runs `windhawk-cli mod install --file build/wholeui.wh.cpp`
 (FR-006); the path to `windhawk-cli.exe` comes from `WINDHAWK_ROOT` or the default portable
 path, never hard-coded in the source tree.
+
+**Implementation notes (T012–T018)**
+
+- A repeated project include is replaced by `// (already inlined: src/<path>)`, so line
+  counts stay intact. After an inlined file the including file resumes with
+  `// ---- src/<path>:<line> ----` (the next line is `<line>` of that file). These two marker
+  forms map every generated line back to a source line; a source line that looks like a
+  marker fails the build. Compiler output has `wholeui.wh.cpp:<line>` rewritten to
+  `src/<path>:<line>`; the code excerpt clang prints still shows the generated line number.
+- Sources are read as UTF-8 with any BOM dropped and CRLF turned into LF; a `*/` in the readme
+  or settings fails the build (it would end the comment block).
+- `--compile` uses Windhawk's compiler in `$WINDHAWK_ROOT\Compiler` when present (its
+  headers are built in), else the pinned one with `-I tools/windhawk-sdk/include`; the import
+  library is always `tools/windhawk-sdk/64/windhawk.lib` (the engine folder name varies per
+  install). Flags come from `toolchain.json`, then `warning_flags`, then the header's
+  `@compilerOptions`.
+- `windhawk-cli mod install --file` installs the mod as **`local@wholeui`** (local installs
+  get the `local@` prefix).
+- `tools/test.py` derives the test flags from `compile_flags` (dropping the DLL-only ones and
+  every `-DWH_*`) and links statically, so the test executable needs no runtime DLLs.
+- `tests/tools/test_build.py` loads `tools/build.py` by path: `import build` can resolve to
+  PyPA's `build` package.
 
 **Rationale**: Python 3.14 is installed on the maintainer's machine and on GitHub runners,
 and `.gitignore` already anticipates Python tools. An amalgamation keeps normal

@@ -1,30 +1,32 @@
 # Handoff: Foundation
 
-**Updated**: 2026-11-12 (Phase 2) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
+**Updated**: 2026-11-12 (US1, awaiting validation) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
 
 ## State
 
-Spec, plan, tasks, Phase 1 and Phase 2 (T005–T011) validated and committed (Phase 2:
-`feat: add mod skeleton, logging, listener list and test harness`).
+Spec, plan, tasks, Phase 1 and Phase 2 validated and committed. US1 T012–T018 implemented
+and checked locally, **not committed** (awaiting the maintainer's validation). T019 is partly
+done: the parts that need the maintainer are listed under "Next step".
 
 ## Done in the last session
 
-- Phase 2: `src/mod/header.txt`, `readme.md` (English, then pt-BR), `settings.yaml`
-  (contracts/settings.md verbatim); `src/core/log.*`; `src/core/subscriptions.h`
-  (`ListenerList<Args...>`); `src/main.cpp`; `tests/unit/harness.h`, `main.cpp`,
-  `subscriptions_test.cpp`.
-- Checked with the pinned toolchain: unit tests 7/7 pass, a deliberate failure exits 1 with
-  file, line and test name; a hand-made throwaway amalgamation compiles with Windhawk's flags
-  plus `warning_flags`, no warnings (the real `build.py` is T012+).
-- Logging contract refined (contracts/engine-api.md): `Info/Warn/Verbose(area, fmt, ...)`,
-  plus `SetVerbose`/`IsVerbose`. `Wh_Log`'s own `[line:function]` prefix points to `log.cpp`.
-- Conventions: include guards (no `#pragma once`, it warns in the amalgamated main file);
-  quoted includes are relative to the including file; `main.cpp` includes each `.h` then its
-  `.cpp`.
-- Metadata: `@author Carlos Landini`, `@github`/`@homepage` from the repository remote,
-  `@license GPL-3.0-only` (installed mods use `@license`; acceptance confirms Windhawk shows it).
-- `ListenerList`: a listener removed during a notification is skipped for the rest of that
-  notification on the same thread (checked per call), not only from the next one.
+- `tests/tools/test_build.py` (24 tests) with fixtures in `tests/tools/fixtures/amalgamation/`;
+  `tools/build.py` (generate, `--check`, `--compile`, `--install`); `tools/test.py`;
+  `.github/workflows/ci.yml`. Implementation notes in research.md R4.
+- `--compile` appends the header's `@compilerOptions` (as Windhawk does); `mod_libraries`
+  removed from `tools/toolchain.json` (tasks T003/T015, plan, research R1 updated).
+- Local run (T019): `build.py` writes the file in 3 ms; `--check` identical; `--compile` in
+  about 1.2 s with both Windhawk's compiler and the pinned one (`WINDHAWK_ROOT` pointed
+  elsewhere); `test.py`: 7/7 C++ and 24/24 Python, with both compilers. SC-001 (< 30 s) met.
+- A deliberate error in `src/core/log.cpp` line 20 compiled to
+  `src/core/log.cpp:20:56: error: expected expression` (pinned toolchain).
+- `--install`: installed as `local@wholeui` 0.1.0, enabled; the DLL is loaded in
+  `explorer.exe` only (checked through process modules, non-elevated processes).
+- Windhawk's log (mod logging on) shows
+  `explorer.exe [WH] [local@wholeui] [200:Write]: [core] WholeUI 0.1.0 loaded`; the
+  `[line:function]` prefix is a line of the generated file.
+- `@author` changed back to `Onutirachi` (maintainer's choice).
+- Python 3.12 (CI's version) is not installed locally; the scripts use nothing newer than 3.9.
 
 ## Decisions
 
@@ -55,4 +57,11 @@ Spec, plan, tasks, Phase 1 and Phase 2 (T005–T011) validated and committed (Ph
 
 ## Next step
 
-US1 (T012–T019), stopping after T019 for validation.
+Finish T019 with the maintainer:
+
+1. Validate and commit US1 (T012–T018).
+2. Push the branch, open a pull request, check that CI passes; add branch protection on
+   `main` requiring the "Build and test" job.
+3. Throwaway pull request with a deliberate compile error: CI fails naming the source file.
+
+Then US2 (T020–T034).

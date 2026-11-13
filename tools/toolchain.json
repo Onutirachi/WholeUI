@@ -63,14 +63,5 @@
     "-Wno-cast-function-type-mismatch",
     "-Wno-pragma-pack",
     "-Wno-pragma-system-header-outside-header"
-  ],
-  "mod_libraries": [
-    "-lruntimeobject",
-    "-lole32",
-    "-ld2d1",
-    "-ldwrite",
-    "-lgdi32",
-    "-lcomctl32",
-    "-lpsapi"
   ]
 }

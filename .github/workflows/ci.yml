@@ -1,0 +1,52 @@
+# Builds, compiles and tests WholeUI on every pull request and push to main (FR-004, FR-005).
+# The compiler is the pinned llvm-mingw release Windhawk uses (tools/toolchain.json).
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Read pinned toolchain
+        id: toolchain
+        shell: bash
+        run: |
+          python - >> "$GITHUB_OUTPUT" <<'EOF'
+          import json
+          config = json.load(open("tools/toolchain.json", encoding="utf-8"))["llvm_mingw"]
+          print(f"sha256={config['sha256']}")
+          print(f"dir=build/toolchain/{config['archive_root']}")
+          EOF
+
+      - name: Cache toolchain
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.toolchain.outputs.dir }}
+          key: llvm-mingw-${{ steps.toolchain.outputs.sha256 }}
+
+      - name: Set up toolchain
+        run: python tools/setup_toolchain.py
+
+      - name: Build and check determinism
+        run: python tools/build.py --check
+
+      - name: Compile with Windhawk's flags
+        run: python tools/build.py --compile
+
+      - name: Run tests
+        run: python tools/test.py

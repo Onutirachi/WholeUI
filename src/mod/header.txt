@@ -5,7 +5,7 @@
 // @description     One coherent, fluid Windows 11 interface in a single mod
 // @description:pt-BR Uma interface do Windows 11 coerente e fluida em um único mod
 // @version         0.1.0
-// @author          Carlos Landini
+// @author          Onutirachi
 // @github          https://github.com/Onutirachi
 // @homepage        https://github.com/Onutirachi/WholeUI
 // @include         explorer.exe
