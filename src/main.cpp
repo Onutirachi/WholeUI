@@ -25,6 +25,8 @@
 #include "tokens/tokens.cpp"
 #include "tokens/system.h"
 #include "tokens/system.cpp"
+#include "tokens/runtime.h"
+#include "tokens/runtime.cpp"
 
 namespace {
 

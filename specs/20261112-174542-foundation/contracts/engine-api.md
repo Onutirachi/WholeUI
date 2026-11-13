@@ -68,24 +68,38 @@ diagnostic mode is on, each classification (not a cache hit) and each level chan
 `log::Verbose` line with the level, own level, reason, rule, identity fields, top-level window
 and page count; never a title.
 
-## Design tokens (`src/tokens/tokens.h`)
+## Design tokens (`src/tokens/tokens.h`, `src/tokens/runtime.h`)
 
 ```cpp
 namespace wholeui::tokens {
 
-struct Tokens;                       // fields as in data-model.md, all const
-const Tokens& Current();             // snapshot valid until the next change notification
+// tokens.h (PURE)
+struct Tokens;                       // fields as in data-model.md
+Tokens Resolve(const TokenInputs& in);  // pure; used by tests
+
+// runtime.h
+const Tokens& Current() noexcept;    // snapshot; the reference stays valid until unload
 using TokensChangedFn = void (*)(void* context);
 SubscriptionId SubscribeChanged(TokensChangedFn fn, void* context);
 void Unsubscribe(SubscriptionId id);
 
-Tokens Resolve(const TokenInputs& in);  // pure; used by tests
-
 }
 ```
 
-`Current()` returns a reference to an immutable snapshot; a change swaps the snapshot and
-then notifies. A caller that keeps values across a notification re-reads `Current()`.
+`Current()` returns a reference to an immutable snapshot; before the first system read it is
+`Resolve(DefaultInputs())`. A change swaps the snapshot and then notifies, on the worker
+thread with no lock held. Old snapshots are kept until unload, so a reference read on another
+thread during a change stays valid; a caller that keeps values across a notification
+re-reads `Current()`. A system read equal to the current inputs is skipped: no swap, no log
+line, no notification (Windows raises one change several times). Each swap writes one
+`log::Info` line with mode, accent, text scale and font family.
+
+Used by `src/main.cpp` only:
+
+```cpp
+void OnSystemInputs(const TokenInputs& inputs, void* context) noexcept;  // system::InputsFn
+void ResetTokens() noexcept;  // unload, after system::Stop and worker::Stop
+```
 
 ## Logging (`src/core/log.h`)
 

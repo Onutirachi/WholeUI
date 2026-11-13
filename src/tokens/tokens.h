@@ -25,6 +25,10 @@ struct TokenInputs {
     std::uint32_t accentDark3 = 0;
     float textScale = 1.0f;  // 1.00 to 2.25
     bool variableFontAvailable = false;
+
+    // Exact comparison: the runtime skips a read equal to the current inputs (Windows raises
+    // one change several times).
+    friend bool operator==(const TokenInputs&, const TokenInputs&) = default;
 };
 
 // The inputs used when a system read fails: light mode, Windows' default accent and shades,

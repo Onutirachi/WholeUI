@@ -1,6 +1,6 @@
 # Handoff: Foundation
 
-**Updated**: 2026-11-13 (US4: T038 system reads committed) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
+**Updated**: 2026-11-13 (US4: T039 runtime snapshot committed) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
 
 ## State
 
@@ -254,8 +254,33 @@ void*)`; `void Stop()`, both `noexcept`. Included in `main.cpp` but **not called
 - Results: `build.py --check --compile` clean; `tools/test.py` 72/72 C++, 43/43 Python; the
   clean build is installed.
 
+## T039 runtime snapshot (2026-11-13)
+
+`src/tokens/runtime.h` / `runtime.cpp` (not PURE), namespace `wholeui::tokens`: `Current()`
+(`noexcept`), `SubscribeChanged`, `Unsubscribe`, and for `main.cpp` only
+`OnSystemInputs(const TokenInputs&, void*)` (a `system::InputsFn`) and `ResetTokens()`.
+Included in `main.cpp` but **not called yet** (T040).
+
+- Before the first read `Current()` is `Resolve(DefaultInputs())` (function-local static).
+- Swap: resolve outside the lock, push the new snapshot into a list kept until
+  `ResetTokens`, publish it through an atomic pointer (`Current()` takes no lock), then one
+  `log::Info` (`resolved: mode dark, accent #0078D4, text scale 1.00, font Segoe UI
+  Variable`) and `Notify` with no lock held. Keeping every snapshot (changes are rare) keeps
+  references from other threads valid without reference counting.
+- Inputs equal to the current ones are skipped (no swap, log or notify): `TokenInputs` got a
+  defaulted `operator==` (exact, floats included), with 2 new tests in `tokens_test.cpp`.
+- Resolve failure (out of memory) keeps the current snapshot, one `log::Warn`.
+- `ResetTokens` must run after `system::Stop` and `worker::Stop`; it clears listeners and
+  snapshots, so `Current()` returns the defaults again.
+- Contract engine-api.md "Design tokens" updated (where each function lives, skip rule,
+  snapshot lifetime, main.cpp entries).
+- Results: `build.py --check --compile` clean; `tools/test.py` 74/74 C++, 43/43 Python. Not
+  installed or checked live (nothing calls it until T040).
+
 ## Next step
 
-1. T038 committed as `feat: add system token reads` (not pushed).
-2. T039 (runtime snapshot; skip unchanged inputs), then T040 (wire worker + `system::Start`
-   with the runtime's callback, `system::Stop` before `worker::Stop`).
+1. T039 committed as `feat: add token runtime snapshot` (not pushed).
+2. T040: in `Wh_ModInit` call `tokens::system::Start(tokens::OnSystemInputs, nullptr)` after
+   `worker::Start`; in `Wh_ModUninit` call `system::Stop()` before `worker::Stop()`, then
+   `ResetTokens()` (after `worker::Stop`). Live check: the `[tokens] resolved` line at load
+   and once per real change (no repeats).

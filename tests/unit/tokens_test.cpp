@@ -276,3 +276,30 @@ TEST(tokens_resolve_default_inputs) {
     CheckRamp(t, 1.0f);
     CheckGeometry(t);
 }
+
+// --- Input comparison (the runtime skips repeated reads) ------------------------------------
+
+TEST(tokens_inputs_equal_when_every_field_equal) {
+    CHECK(DefaultInputs() == DefaultInputs());
+    TokenInputs a = Inputs(true, kGreen, 1.5f);
+    TokenInputs b = Inputs(true, kGreen, 1.5f);
+    CHECK(a == b);
+}
+
+TEST(tokens_inputs_differ_when_any_field_differs) {
+    TokenInputs base = DefaultInputs();
+    TokenInputs changed[10] = {base, base, base, base, base, base, base, base, base, base};
+    changed[0].dark = !base.dark;
+    changed[1].accent ^= 1;
+    changed[2].accentLight1 ^= 1;
+    changed[3].accentLight2 ^= 1;
+    changed[4].accentLight3 ^= 1;
+    changed[5].accentDark1 ^= 1;
+    changed[6].accentDark2 ^= 1;
+    changed[7].accentDark3 ^= 1;
+    changed[8].textScale = 1.25f;
+    changed[9].variableFontAvailable = !base.variableFontAvailable;
+    for (const TokenInputs& in : changed) {
+        CHECK(!(in == base));
+    }
+}
