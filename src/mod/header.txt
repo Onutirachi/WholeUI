@@ -11,5 +11,5 @@
 // @include         explorer.exe
 // @architecture    x86-64
 // @license         GPL-3.0-only
-// @compilerOptions -lruntimeobject -lole32 -ld2d1 -ldwrite -lgdi32 -lcomctl32 -lpsapi
+// @compilerOptions -lruntimeobject -lole32 -ld2d1 -ldwrite -lgdi32 -lcomctl32 -lpsapi -lshcore
 // ==/WindhawkMod==

@@ -26,7 +26,8 @@ ready-to-paste override and table row. Details and alternatives are in
 `Wh_ModInit` / `Wh_ModSettingsChanged` / `Wh_ModUninit`); Win32 (`user32`, `comctl32`
 hooks, `kernel32`); WinRT ABI `Windows.UI.ViewManagement.UISettings`
 (`-lruntimeobject -lole32`); Direct2D and DirectWrite for the overlay (`-ld2d1 -ldwrite`);
-GDI for the layered window surface (`-lgdi32`). No third-party libraries.
+GDI for the layered window surface (`-lgdi32`); `GetDpiForMonitor` to size the overlay
+for the cursor's monitor (`-lshcore`). No third-party libraries.
 
 **Storage**: none; Windhawk stores the two settings.
 

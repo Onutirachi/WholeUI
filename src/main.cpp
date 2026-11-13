@@ -7,6 +7,7 @@
 #include "core/log.cpp"
 #include "core/lock.h"
 #include "core/subscriptions.h"
+#include "core/com.h"
 #include "core/worker.h"
 #include "core/worker.cpp"
 #include "compat/rules.h"
@@ -29,6 +30,8 @@
 #include "tokens/runtime.cpp"
 #include "diagnostic/format.h"
 #include "diagnostic/format.cpp"
+#include "diagnostic/overlay.h"
+#include "diagnostic/overlay.cpp"
 
 namespace {
 

@@ -1,6 +1,6 @@
 # Handoff: Foundation
 
-**Updated**: 2026-11-13 (US3: T043 committed) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
+**Updated**: 2026-11-13 (US3: T044 committed) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
 
 ## State
 
@@ -331,8 +331,45 @@ logic is `compat::Classify`, already covered).
 
 - Results: `build.py --check --compile` clean; `tools/test.py` 91/91 C++, 43/43 Python.
 
+## T044 overlay window (2026-11-13)
+
+`src/diagnostic/overlay.h` / `overlay.cpp` (not PURE), namespace
+`wholeui::diagnostic::overlay`, **worker thread only** (other threads: one warn, ignored):
+`bool Show(POINT cursor, const std::wstring& text)`, `void Follow(POINT cursor)`,
+`void Hide()`, `void Destroy()`, all `noexcept`. Included in `main.cpp`, not called yet
+(T045 calls Show/Follow from its timer; T047's Stop posts `Destroy`, which must run before
+`worker::Stop`, or the window class stays registered after the DLL unloads).
+
+- Window `WholeUI.Diagnostic`: `WS_POPUP` with `WS_EX_LAYERED | WS_EX_TRANSPARENT |
+  WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST`; `WM_MOUSEACTIVATE` → `MA_NOACTIVATE`,
+  `WM_NCHITTEST` → `HTTRANSPARENT`; shown with `SWP_NOACTIVATE | SWP_SHOWWINDOW`.
+- Drawing: `ID2D1DCRenderTarget` (premultiplied BGRA, DPI of the cursor's monitor) bound to
+  a 32-bit top-down DIB, then `UpdateLayeredWindow(ULW_ALPHA)`. Tokens read on every Show:
+  `fontFamily` + `body` style, padding `spacing.m` × `spacing.s`, `radiusOverlay`,
+  `backgroundBase` fill, 1 physical px `strokeControl` border, `textPrimary`, hint line in
+  `textSecondary`. Grayscale text antialiasing (transparent corners rule out ClearType).
+  Values align on one incremental tab stop = widest label + `spacing.l`; no wrapping.
+- DPI: each call switches the thread to per-monitor-v2 for its duration; size uses
+  `GetDpiForMonitor` (new link flag `-lshcore` in header.txt, plan.md updated). `Follow`
+  only moves (`SetWindowPos`), and redraws the last text when the cursor reaches a monitor
+  with another DPI. **T045 must read `GetCursorPos` under per-monitor-v2 awareness too.**
+- Placement: cursor + 16 px (scaled); on an axis where it would leave the monitor
+  (`rcMonitor`) it goes to the other side; then clamped inside the monitor.
+- Failures: one `log::Warn` until a draw succeeds again; the overlay is hidden. A failed
+  `EndDraw` (device lost included) drops the render target; the next Show makes a new one.
+- `ComRef` moved from `tokens/system.cpp` to `src/core/com.h` (namespace `wholeui`), shared
+  by both.
+- Live check (temporary code, reverted: shell process only, Show with sample text and a 50 ms
+  thread timer calling Follow; Destroy posted at uninit): screenshot shows the overlay 16 px
+  below-right, rounded corners, border, values aligned, hint dimmer. Window rect for cursor at
+  (1880,1050) → (1430,918)–(1864,1034), (1880,100) → right edge flipped only, (100,1050) →
+  bottom flipped only, second monitor (-454,754) → below-right. After reinstall no
+  `WholeUI.Diagnostic` window is left.
+- Results: `build.py --check --compile` clean; `tools/test.py` 91/91 C++, 43/43 Python; the
+  clean build is installed.
+
 ## Next step
 
-1. T043 committed as `feat: classify identities of other processes` (not pushed). Earlier US3/US4 commits are
-   also unpushed.
-2. T044 overlay window (`src/diagnostic/overlay.h` / `.cpp`, research R14).
+1. T044 committed as `feat: add diagnostic overlay window` (not pushed).
+   Earlier US3/US4 commits are also unpushed.
+2. T045 cursor tracking (timer, refresh rules, identity + classification, SC-005 timing).

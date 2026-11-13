@@ -18,6 +18,7 @@
 #include <iterator>
 #include <new>
 
+#include "../core/com.h"
 #include "../core/log.h"
 #include "../core/worker.h"
 
@@ -35,34 +36,6 @@ constexpr double kMaxTextScale = 2.25;
 // (an event already being delivered on another thread holds one until it returns).
 constexpr int kHandlerReleaseWaitMs = 1000;
 constexpr int kHandlerReleasePollMs = 10;
-
-// Owns one COM reference.
-template <typename T>
-class ComRef {
-public:
-    ComRef() = default;
-    ComRef(const ComRef&) = delete;
-    ComRef& operator=(const ComRef&) = delete;
-    ~ComRef() { Reset(); }
-
-    T* Get() const noexcept { return ptr_; }
-    T* operator->() const noexcept { return ptr_; }
-    explicit operator bool() const noexcept { return ptr_ != nullptr; }
-    T** Put() noexcept {
-        Reset();
-        return &ptr_;
-    }
-    void** PutVoid() noexcept { return reinterpret_cast<void**>(Put()); }
-    void Reset() noexcept {
-        if (ptr_ != nullptr) {
-            ptr_->Release();
-            ptr_ = nullptr;
-        }
-    }
-
-private:
-    T* ptr_ = nullptr;
-};
 
 // Handler objects alive, so the release task can wait until none is left before the DLL
 // unloads.
