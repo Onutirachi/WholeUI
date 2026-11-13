@@ -20,6 +20,14 @@ WindowIdentity ReadIdentity(HWND hwnd);
 // nullptr when the window is invalid.
 HWND TopLevelOf(HWND hwnd) noexcept;
 
+// The lower-case file name of a module loaded in this process, Unknown when it cannot be read
+// (null, or a resource-only handle). Used for property sheet pages (dialog_hooks).
+// Throws only std::bad_alloc.
+Field ModuleNameOf(HMODULE module);
+
+// The lower-case file name of this process's image. Throws only std::bad_alloc.
+Field CurrentProcessName();
+
 }  // namespace wholeui::compat
 
 #endif  // WHOLEUI_COMPAT_IDENTITY_H

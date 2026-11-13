@@ -136,4 +136,12 @@ HWND TopLevelOf(HWND hwnd) noexcept {
     return hwnd ? GetAncestor(hwnd, GA_ROOT) : nullptr;
 }
 
+Field ModuleNameOf(HMODULE module) {
+    return module ? ModuleFileName(module) : Field::Unknown();
+}
+
+Field CurrentProcessName() {
+    return OwnProcess();
+}
+
 }  // namespace wholeui::compat

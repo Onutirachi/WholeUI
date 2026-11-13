@@ -303,8 +303,18 @@ Properties of drive C: (Quota page from `dskquoui.dll`); Folder Options.
 - The sheet window is the **first** `#32770` created on the thread during `PropertySheetW`,
   whatever hooked call it is nested in (it is created inside `CreateDialogIndirectParamW`).
 - If `comctl32.dll` is not loaded at `Wh_ModInit`, hook `PropertySheetW` and
-  `CreatePropertySheetPageW` when it loads (through Windhawk's module-load notification or a
-  `LoadLibraryExW` hook, chosen in T033); only the instance(s) actually loaded are hooked.
+  `CreatePropertySheetPageW` when it loads; only the instance(s) actually loaded are hooked.
+  **Chosen in T033**: Windhawk has no module-load notification, so a `kernelbase`
+  `LoadLibraryExW` hook checks, after each successful load that is not data-only, the two
+  places comctl32 can be: `GetModuleHandleW(L"comctl32.dll")` (the instance the activation
+  context resolves, v6 in `explorer.exe`) and the system32 path (v5). Two loader lookups per
+  load; enumerating every module (`EnumProcessModules`) was rejected because it reads the
+  module list one entry at a time. A comctl32 loaded through a delay-load import (which does
+  not go through `LoadLibraryExW`) is hooked at the next load of any library.
+- Per-thread state (remembered lookups, the call stack, the CBT hook) is trivially
+  destructible: a `thread_local` destructor would run at thread exit, possibly after the mod
+  is unloaded. String resource names are interned in a process-wide table so the per-thread
+  list holds pointers only. `Wh_ModUninit` removes the CBT hooks still installed on any thread.
 
 **Alternatives**: wrapping the dialog procedure to catch `WM_INITDIALOG` (changes the window's
 `DWLP_DLGPROC`, even if briefly; rejected by FR-008); a global `SetWinEventHook` for object

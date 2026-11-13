@@ -42,6 +42,14 @@ void SetRuleSet(RuleSet rules);  // swap, re-classify cached windows, notify cha
 void ResetEngine();              // unload: drop the rule set, cache and listeners
 ```
 
+Used by `src/compat/dialog_hooks.cpp` only:
+
+```cpp
+// A page from a module not listed before was added to a sheet after it was created
+// (FR-013a): re-classify the cached sheet and its children, notify changed levels.
+void OnSheetPagesChanged(HWND sheet) noexcept;
+```
+
 Rules for callers:
 
 - Ask before changing a window, every time it matters (cheap: cached).

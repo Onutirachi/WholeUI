@@ -46,6 +46,11 @@ void Unsubscribe(SubscriptionId id);
 void SetRuleSet(RuleSet rules);
 void ResetEngine();
 
+// For dialog_hooks: a page from a module not listed before was added to `sheet` after it was
+// created (FR-013a). Re-classifies the cached sheet and its children and notifies listeners of
+// each changed level. Call without dialog_hooks locks held.
+void OnSheetPagesChanged(HWND sheet) noexcept;
+
 }  // namespace wholeui::compat
 
 #endif  // WHOLEUI_COMPAT_ENGINE_H

@@ -5,6 +5,7 @@
 
 #include "core/log.h"
 #include "core/log.cpp"
+#include "core/lock.h"
 #include "core/subscriptions.h"
 #include "compat/rules.h"
 #include "compat/rules.cpp"
@@ -14,8 +15,10 @@
 #include "settings/settings.cpp"
 #include "compat/identity.h"
 #include "compat/identity.cpp"
+#include "compat/dialog_hooks.h"
 #include "compat/engine.h"
 #include "compat/engine.cpp"
+#include "compat/dialog_hooks.cpp"
 
 namespace {
 
@@ -41,6 +44,7 @@ void ApplySettings(const wchar_t* when) {
 
 BOOL Wh_ModInit() {
     wholeui::log::Info(L"core", L"WholeUI %s loaded", WH_MOD_VERSION);
+    wholeui::compat::InstallDialogHooks();
     ApplySettings(L"loaded");
     return TRUE;
 }
@@ -50,5 +54,6 @@ void Wh_ModSettingsChanged() {
 }
 
 void Wh_ModUninit() {
+    wholeui::compat::UninstallDialogHooks();
     wholeui::compat::ResetEngine();
 }

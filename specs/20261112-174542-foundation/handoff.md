@@ -1,6 +1,6 @@
 # Handoff: Foundation
 
-**Updated**: 2026-11-13 (US2: T032 spike) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
+**Updated**: 2026-11-13 (US2: T033 dialog hooks) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
 
 ## State
 
@@ -17,25 +17,27 @@ not installed locally; the scripts use nothing newer than 3.9.
 
 ## Done in the last session
 
-- T028: `src/settings/settings.h/.cpp`: `settings::Load() → Settings { RuleSet rules; bool
-  diagnosticMode; }`. Built-ins + valid overrides, version from a process-wide counter (each
-  `Load` is newer). Logs `override <i> ignored: <reason>: "<text>"` and
-  `override <i> has no effect: shell surface` with `log::Warn` (area `settings`).
-- T029: `src/compat/identity.h/.cpp`: `ReadIdentity(HWND)` (in-process or cross-process per
-  R7; lower-cased file names; class via `GetClassNameW`; template `NotADialog` unless the
-  class is `#32770`, then `Unknown`); `failed` only for an invalid window. `TopLevelOf(HWND)`
-  = `GetAncestor(GA_ROOT)`. Throws only `std::bad_alloc`.
-- T030: `src/compat/engine.h/.cpp` per the contract: `Classify(HWND)`, `LevelOf`,
-  `SubscribeLevelChanged`, `Unsubscribe`, plus `SetRuleSet(RuleSet)` and `ResetEngine()` for
-  `main.cpp`. Not wired yet (T031). `ListenerList::Clear()` added for `ResetEngine` (+ test).
-- T031: `src/main.cpp` `ApplySettings(when)`: `settings::Load()`, `log::SetVerbose(diagnosticMode)`,
-  one `log::Info` line `settings` `loaded|changed: N built-in rules, M overrides, diagnostic
-  mode on|off`, then `compat::SetRuleSet`. Called from `Wh_ModInit` and
-  `Wh_ModSettingsChanged`; an exception logs `log::Warn` and leaves the engine's rule set
-  unchanged (before the first success every window is `Native`). `Wh_ModUninit` calls
-  `compat::ResetEngine()`. Counts use `%u` with a cast (msvcrt's `_vsnwprintf` may not know `z`).
-- Results: `tools/test.py` 57/57 C++ and 43/43 Python; `build.py --check --compile`
-  identical and compiles with no warnings. Nothing ran live yet.
+- T033: `src/compat/dialog_hooks.h/.cpp` per research R8 "Revision". Public:
+  `InstallDialogHooks()` (Wh_ModInit, before `ApplySettings`), `UninstallDialogHooks()`
+  (Wh_ModUninit, before `ResetEngine`), `DialogTemplateOf(HWND) → TemplateField`,
+  `SheetPagesOf(HWND) → SheetPages { known, incomplete, pages }` (page identities: own process,
+  page module, `#32770`, template). Late page → `compat::OnSheetPagesChanged(sheet)` (new in
+  engine; re-evaluates the sheet and cache entries whose top-level is the sheet, notifies;
+  entries now keep `topLevelHwnd`). Contract engine-api.md updated.
+- Internals live in `namespace wholeui::compat::dialogs { namespace { … } }`: the amalgamation
+  shares one anonymous namespace per named namespace across all `.cpp` files. SRWLOCK guards
+  moved to `src/core/lock.h` (`wholeui::SharedLock` / `ExclusiveLock`). `identity.h` now
+  exposes `ModuleNameOf(HMODULE)` and `CurrentProcessName()`.
+- Late comctl32: `kernelbase` `LoadLibraryExW` hook + two `GetModuleHandleW` lookups (research
+  R8 "Chosen in T033").
+- Live check (diagnostic mode on, verbose `[dialogs]` lines): Run → `template 1003`; Properties
+  of a WinRAR SFX `.exe` → sheet with 7 pages (shell32 1041, acppage 5011, rarext
+  EXTARCINFODLG, cryptui 145, aclui 103, shell32 16816, twext 102) logged before the frame
+  (`1006`), and each page window got its template when its tab opened; drive C: (7 pages incl.
+  dskquoui 108, ntshrui 1000) and Folder Options (shell32 29959–29961) likewise. No `page
+  added later`, no warnings. A nested child dialog in a page (shell32 1410) is correctly not
+  taken for a page. Not observed: unloading the mod while a sheet is open.
+- Results: `tools/test.py` 57/57 C++ and 43/43 Python; `build.py --check --compile` clean.
 
 ## Decisions
 
@@ -164,5 +166,7 @@ local install).
 
 ## Next step
 
-1. T033 (dialog hooks per R8 "Revision"), then T034. The foundation build is reinstalled in
-   Windhawk (spike build replaced).
+1. T034: feed `DialogTemplateOf` into `ReadIdentity` (template for `#32770`) and
+   `SheetPagesOf` into the engine's `Evaluate` (pages span; `incomplete` → treat as an
+   unknown page), one `log::Verbose` line per classification. Lock order: engine lock, then
+   the dialog store lock (dialog_hooks never calls the engine while holding its lock).

@@ -5,6 +5,7 @@
 #include <utility>
 #include <vector>
 
+#include "../core/lock.h"
 #include "../core/log.h"
 #include "identity.h"
 
@@ -24,6 +25,7 @@ struct Entry {
     // Kept so a new rule set re-classifies without reading Windows under the lock.
     WindowIdentity identity;
     bool hasTopLevel = false;  // false: the window is itself top-level
+    HWND topLevelHwnd = nullptr;
     WindowIdentity topLevel;
 };
 
@@ -35,28 +37,6 @@ struct State {
 
 State g_state;
 ListenerList<HWND, Level, Level> g_listeners;
-
-class SharedLock {
-public:
-    explicit SharedLock(SRWLOCK& lock) : lock_(lock) { AcquireSRWLockShared(&lock_); }
-    ~SharedLock() { ReleaseSRWLockShared(&lock_); }
-    SharedLock(const SharedLock&) = delete;
-    SharedLock& operator=(const SharedLock&) = delete;
-
-private:
-    SRWLOCK& lock_;
-};
-
-class ExclusiveLock {
-public:
-    explicit ExclusiveLock(SRWLOCK& lock) : lock_(lock) { AcquireSRWLockExclusive(&lock_); }
-    ~ExclusiveLock() { ReleaseSRWLockExclusive(&lock_); }
-    ExclusiveLock(const ExclusiveLock&) = delete;
-    ExclusiveLock& operator=(const ExclusiveLock&) = delete;
-
-private:
-    SRWLOCK& lock_;
-};
 
 struct LevelChange {
     HWND hwnd;
@@ -127,6 +107,7 @@ WindowClassification ClassifyOrThrow(HWND hwnd) {
         entry.identity.failed = true;
     } else if (topLevel != hwnd) {
         entry.hasTopLevel = true;
+        entry.topLevelHwnd = topLevel;
         entry.topLevel = ReadIdentity(topLevel);
     }
     entry.result = Evaluate(entry, *rules);
@@ -193,6 +174,38 @@ void SetRuleSet(RuleSet rules) {
         std::unordered_map<HWND, Entry> dropped;
         ExclusiveLock lock(g_state.lock);
         dropped.swap(g_state.cache);
+        return;
+    }
+    for (const LevelChange& change : changes) {
+        g_listeners.Notify(change.hwnd, change.oldLevel, change.newLevel);
+    }
+}
+
+void OnSheetPagesChanged(HWND sheet) noexcept {
+    std::vector<LevelChange> changes;
+    try {
+        ExclusiveLock lock(g_state.lock);
+        if (!g_state.rules) {
+            return;
+        }
+        for (auto& [hwnd, entry] : g_state.cache) {
+            if (hwnd != sheet && entry.topLevelHwnd != sheet) {
+                continue;
+            }
+            Level oldLevel = entry.result.level;
+            entry.result = Evaluate(entry, *g_state.rules);
+            if (entry.result.level != oldLevel) {
+                changes.push_back(LevelChange{hwnd, oldLevel, entry.result.level});
+            }
+        }
+    } catch (...) {
+        // Out of memory mid-update: forget the sheet and its children so the next query
+        // classifies them again. Listeners are not told (FR-018).
+        log::Warn(L"compat", L"sheet %p: page update failed: exception; windows forgotten", sheet);
+        ExclusiveLock lock(g_state.lock);
+        std::erase_if(g_state.cache, [sheet](const auto& item) {
+            return item.first == sheet || item.second.topLevelHwnd == sheet;
+        });
         return;
     }
     for (const LevelChange& change : changes) {
