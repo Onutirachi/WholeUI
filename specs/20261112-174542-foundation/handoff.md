@@ -1,6 +1,6 @@
 # Handoff: Foundation
 
-**Updated**: 2026-11-13 (T058 committed) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
+**Updated**: 2026-11-13 (T059 committed, T060 checked) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
 
 ## State
 
@@ -603,6 +603,57 @@ are hooked (checked with `grep`: no `user32` dialog, `comctl32` or `LoadLibrary*
 - Results: `build.py --check --compile` clean (2.9 s); `tools/test.py` 94/94 C++, 43/43
   Python. Not installed (mod stays disabled until T060).
 
+## T059 hosted pages in the engine (2026-11-13, committed with T060)
+
+- `identity.h`: `std::vector<HWND> HostedPagesOf(HWND hwnd, HWND topLevel)`: ancestors of
+  class `#32770` with `WS_CHILD`, nearest first, walked with `GetAncestor(GA_PARENT)` until
+  `topLevel` (at most 256 steps, only a guard against a chain changed mid-walk); works for
+  other processes. `ModuleNameOf` and `CurrentProcessName` removed (no caller left since
+  T058).
+- `engine.cpp`: `PageList`, `pagesEpoch`, `PagesOf` and `OnSheetPagesChanged` gone (also from
+  `engine.h`; the `LevelChangedFn` comment now says only "settings edited"). The entry keeps
+  `std::vector<WindowIdentity> pages` and `nearestPage`, read outside the lock with the
+  top-level, so `SetRuleSet` re-classifies without calling Windows. A page whose read failed
+  makes the window `Native`/`Failure` (not cached, one warning), from `Classify`.
+  `engine.cpp` no longer includes `dialog_hooks.h` (identity reads the template).
+- Verbose line: `...; top-level <hwnd>; page <hwnd> (<module> template <id>), N pages` — the
+  page part only when there is one.
+- `ClassifyIdentity(window, pages, topLevel)` as in the contract; the overlay reads the pages
+  of another process's window with `HostedPagesOf` + `ReadIdentity`; the clipboard path passes
+  `{}` (a top-level window has no pages).
+- Not unit-tested (Windows code); checked live in T060.
+- Gotcha: Python `write_text` on Windows writes CRLF; the repo is LF. Write with
+  `newline="
+"` or run `sed -i 's/
+$//'` after.
+- Results: `build.py --check --compile` clean (2.8 s); `tools/test.py` 94/94 C++, 43/43
+  Python. Not installed (mod stays disabled until T060).
+
+## T060 live check (2026-11-13)
+
+- `build.py --check` identical; `--compile` clean (9.6 s); `tools/test.py` 94/94 C++, 43/43
+  Python. `grep`: only `kernelbase` `FindResourceExW` / `FindResourceW` are hooked (no `user32`
+  dialog, `comctl32` or `LoadLibrary*` hook).
+- Installed and enabled: loaded in the 3 `explorer.exe` (67588, 48468, 70204), no warning.
+- With no overrides nothing logs a classification: the overlay ran in another process
+  (`ClassifyIdentity`, not logged) and nothing else queries the engine yet. So, as in T034,
+  temporary code (reverted) posted to the worker, at each template capture, a task that slept
+  300 ms and called `compat::Classify` on the dialog and its first child; test overrides set
+  with `windhawk-cli mod settings set` (removed).
+- Captured templates (pid 70204): Run `shell32` 1003; sheet frame `comctl32` 1006; pages
+  `shell32` 1041 and 16816, `acppage` 5011, `cryptui` 145, `twext` 102, `aclui` 103. Each
+  control's line names its page (`page <hwnd> (<module> template <id>), 1 page`).
+- `comctl32=full`, `shell32=visual`: frame `full`; pages and their controls `visual` (rule,
+  no cap). `comctl32=visual`, `shell32=full`: frame `visual`; page 1041 `visual (own full,
+  capped by top-level)`; its control `visual (own full, capped by page)`.
+- With the sheet open, frame override raised to `full`: control, page and frame
+  `visual -> full (settings changed)` (stored pages re-used); removing the overrides:
+  `full -> native`.
+- Reinstall with the Properties sheet still open: `[dialogs] unloaded: 1 CBT hooks removed,
+  waited 0 ms` in 70204, `[worker] stopped` everywhere, reloaded at once; same Explorer PIDs.
+- The clean build is installed and enabled (no overrides, diagnostic mode on). Listener:
+  this session's scratchpad `dbwin.py` → `log.txt`.
+
 ## Next step
 
 1. T048 is committed (`feat: wire diagnostic mode into the mod`, not pushed). T044–T047 and
@@ -623,4 +674,6 @@ are hooked (checked with `grep`: no `user32` dialog, `comctl32` or `LoadLibrary*
    `comctl32.dll` `1006`, so later specs choose sheets by a frame rule plus page rules.
 4. Replan committed (`59e86fe`). T055 done. T056–T057 committed (above). T058 written
    (above) and committed as `refactor: capture dialog templates without modal hooks` (not
-   pushed). Next: T059, T060, then T050 again from step 1.
+   pushed). T059 and T060 committed together as `refactor: read hosted pages in the
+   compatibility engine` (not pushed); T060 changed only handoff.md and tasks.md. Next: T050 again from step 1 (step 11 now with
+   Run and Properties open while disabling, then using and closing them).

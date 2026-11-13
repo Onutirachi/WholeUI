@@ -10,6 +10,7 @@
 
 #include <windows.h>
 
+#include <span>
 #include <string>
 
 #include "../core/subscriptions.h"
@@ -25,13 +26,15 @@ Level LevelOf(HWND hwnd) noexcept;
 
 // For diagnostic mode: the level the current rules give a window of another process, from
 // identities read with ReadIdentity (FR-021, US3 scenario 5). Rules only: no cache, no
-// listeners, no property sheet pages (only this process's sheets are seen); Unknown fields
-// match no rule. `topLevel` is nullptr when the window is itself top-level. Safe from any
-// thread; never throws (failure: Native/Failure); before the first SetRuleSet, Native/Default.
+// listeners; Unknown fields match no rule. `pages` are the hosted pages between the window
+// and its top-level window, nearest first (HostedPagesOf; may be empty). `topLevel` is
+// nullptr when the window is itself top-level. Safe from any thread; never throws (failure:
+// Native/Failure); before the first SetRuleSet, Native/Default.
 WindowClassification ClassifyIdentity(const WindowIdentity& window,
+                                      std::span<const WindowIdentity> pages,
                                       const WindowIdentity* topLevel) noexcept;
 
-// Called after a cached window's effective level changes (settings edited, late page), on
+// Called after a cached window's effective level changes (settings edited), on
 // the thread that caused the change, without engine locks held. Unsubscribe before the
 // subscribing module unloads. On newLevel < oldLevel, restore the window (constitution I).
 using LevelChangedFn = void (*)(HWND hwnd, Level oldLevel, Level newLevel, void* context);
@@ -43,11 +46,6 @@ void Unsubscribe(SubscriptionId id);
 // ResetEngine drops the rule set, the cache and every listener (FR-029).
 void SetRuleSet(RuleSet rules);
 void ResetEngine();
-
-// For dialog_hooks: a page from a module not listed before was added to `sheet` after it was
-// created (FR-013a). Re-classifies the cached sheet and its children and notifies listeners of
-// each changed level. Call without dialog_hooks locks held.
-void OnSheetPagesChanged(HWND sheet) noexcept;
 
 }  // namespace wholeui::compat
 

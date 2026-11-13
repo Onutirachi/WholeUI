@@ -5,6 +5,8 @@
 
 #include <windows.h>
 
+#include <vector>
+
 #include "rules.h"
 
 namespace wholeui::compat {
@@ -20,13 +22,12 @@ WindowIdentity ReadIdentity(HWND hwnd);
 // nullptr when the window is invalid.
 HWND TopLevelOf(HWND hwnd) noexcept;
 
-// The lower-case file name of a module loaded in this process, Unknown when it cannot be read
-// (null, or a resource-only handle). Used for property sheet pages (dialog_hooks).
-// Throws only std::bad_alloc.
-Field ModuleNameOf(HMODULE module);
-
-// The lower-case file name of this process's image. Throws only std::bad_alloc.
-Field CurrentProcessName();
+// The hosted pages between `hwnd` and its top-level window `topLevel`, nearest first: ancestors
+// of class #32770 with WS_CHILD (property sheet pages, child dialogs; research R8). Walked
+// with GetAncestor(GA_PARENT) until `topLevel` (GetParent on a top-level window would
+// return its owner). Empty when `hwnd` is top-level or has no page above it. Works for
+// windows of other processes. Throws only std::bad_alloc.
+std::vector<HWND> HostedPagesOf(HWND hwnd, HWND topLevel);
 
 }  // namespace wholeui::compat
 

@@ -11,6 +11,7 @@
 #include <cstring>
 #include <optional>
 #include <string_view>
+#include <vector>
 
 #include "../compat/engine.h"
 #include "../compat/identity.h"
@@ -477,8 +478,8 @@ double NowMs() noexcept {
 }
 
 // The overlay text for `hwnd` and its top-level window. A window of this process is
-// classified by the engine (cached, with pages); a window of another process by its rules
-// only (FR-021). False when the window is gone, or memory ran out (logged).
+// classified by the engine (cached); a window of another process by its rules only, with its
+// hosted pages read here (FR-021). False when the window is gone, or memory ran out (logged).
 bool Describe(HWND hwnd, std::wstring& text) noexcept {
     try {
         HWND topLevel = compat::TopLevelOf(hwnd);
@@ -491,9 +492,17 @@ bool Describe(HWND hwnd, std::wstring& text) noexcept {
         const bool isTopLevel = topLevel == hwnd;
         compat::WindowIdentity window = compat::ReadIdentity(hwnd);
         compat::WindowIdentity top = isTopLevel ? window : compat::ReadIdentity(topLevel);
-        compat::WindowClassification classification =
-            inProcess ? compat::Classify(hwnd)
-                      : compat::ClassifyIdentity(window, isTopLevel ? nullptr : &top);
+        compat::WindowClassification classification;
+        if (inProcess) {
+            classification = compat::Classify(hwnd);  // reads the hosted pages itself
+        } else {
+            std::vector<compat::WindowIdentity> pages;
+            for (HWND page : compat::HostedPagesOf(hwnd, topLevel)) {
+                pages.push_back(compat::ReadIdentity(page));
+            }
+            classification =
+                compat::ClassifyIdentity(window, pages, isTopLevel ? nullptr : &top);
+        }
         text = OverlayText(window, top, classification, inProcess);
         return true;
     } catch (...) {
@@ -595,7 +604,7 @@ void Copy(HWND hwnd) noexcept {
         compat::WindowIdentity top = compat::ReadIdentity(topLevel);
         compat::Level level = pid == GetCurrentProcessId()
                                   ? compat::Classify(topLevel).level
-                                  : compat::ClassifyIdentity(top, nullptr).level;
+                                  : compat::ClassifyIdentity(top, {}, nullptr).level;
         std::wstring text = ClipboardText(top, level, ReadBuild());
         if (SetClipboardText(text)) {
             log::Verbose(L"diagnostic", L"copied: %s", text.c_str());

@@ -14,6 +14,9 @@ namespace {
 
 constexpr wchar_t kDialogClass[] = L"#32770";
 
+// Ancestors walked at most when looking for hosted pages.
+constexpr int kMaxAncestors = 256;
+
 // The longest path Windows returns, in characters, terminator included.
 constexpr DWORD kLongPath = 32768;
 
@@ -116,6 +119,13 @@ Field ClassOf(HWND hwnd) {
     return Field::Of(std::wstring(name, static_cast<size_t>(length)));
 }
 
+bool IsDialogClass(HWND hwnd) {
+    wchar_t name[std::size(kDialogClass) + 1];  // one more: a longer name does not match
+    int length = GetClassNameW(hwnd, name, static_cast<int>(std::size(name)));
+    return length == static_cast<int>(std::size(kDialogClass)) - 1 &&
+           std::wstring_view(name, static_cast<size_t>(length)) == kDialogClass;
+}
+
 }  // namespace
 
 WindowIdentity ReadIdentity(HWND hwnd) {
@@ -140,12 +150,21 @@ HWND TopLevelOf(HWND hwnd) noexcept {
     return hwnd ? GetAncestor(hwnd, GA_ROOT) : nullptr;
 }
 
-Field ModuleNameOf(HMODULE module) {
-    return module ? ModuleFileName(module) : Field::Unknown();
-}
-
-Field CurrentProcessName() {
-    return OwnProcess();
+std::vector<HWND> HostedPagesOf(HWND hwnd, HWND topLevel) {
+    std::vector<HWND> pages;
+    if (!hwnd || !topLevel || hwnd == topLevel) {
+        return pages;
+    }
+    // The depth limit only guards against a chain changed mid-walk; Windows nests far less.
+    int depth = 0;
+    for (HWND current = GetAncestor(hwnd, GA_PARENT);
+         current && current != topLevel && depth < kMaxAncestors;
+         current = GetAncestor(current, GA_PARENT), ++depth) {
+        if ((GetWindowLongPtrW(current, GWL_STYLE) & WS_CHILD) && IsDialogClass(current)) {
+            pages.push_back(current);
+        }
+    }
+    return pages;
 }
 
 }  // namespace wholeui::compat

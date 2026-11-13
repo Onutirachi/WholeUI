@@ -1,14 +1,15 @@
 #include "engine.h"
 
+#include <cwchar>
 #include <memory>
 #include <span>
+#include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
 #include "../core/lock.h"
 #include "../core/log.h"
-#include "dialog_hooks.h"
 #include "identity.h"
 
 namespace wholeui::compat {
@@ -17,9 +18,6 @@ namespace {
 
 // Past this many entries, an insert first drops destroyed windows (research R6).
 constexpr size_t kSweepThreshold = 4096;
-
-// The pages of a property sheet, shared by the sheet's entry and its children's entries.
-using PageList = std::shared_ptr<const std::vector<WindowIdentity>>;
 
 struct Entry {
     WindowClassification result;
@@ -32,16 +30,15 @@ struct Entry {
     bool hasTopLevel = false;  // false: the window is itself top-level
     HWND topLevelHwnd = nullptr;
     WindowIdentity topLevel;
-    PageList pages;  // the top-level window's pages; null when it is not a known sheet
+    // The hosted pages between the window and its top-level window, nearest first.
+    std::vector<WindowIdentity> pages;
+    HWND nearestPage = nullptr;  // null when there is no page
 };
 
 struct State {
     SRWLOCK lock = SRWLOCK_INIT;
     std::shared_ptr<const RuleSet> rules;  // null until the first SetRuleSet
     std::unordered_map<HWND, Entry> cache;
-    // Bumped when a sheet's pages change: an entry built from pages read before the change
-    // is not cached.
-    std::uint64_t pagesEpoch = 0;
 };
 
 State g_state;
@@ -59,15 +56,9 @@ WindowClassification Failure() {
     return result;
 }
 
-// Bridge until T059 removes PageList: the dialog hooks no longer record a sheet's pages.
-PageList PagesOf(HWND) {
-    return nullptr;
-}
-
 WindowClassification Evaluate(const Entry& entry, const RuleSet& rules) {
     const WindowIdentity* topLevel = entry.hasTopLevel ? &entry.topLevel : nullptr;
-    // Until T059 reads the hosted pages, no page caps a window.
-    return CopyOf(Classify(entry.identity, {}, topLevel, rules));
+    return CopyOf(Classify(entry.identity, entry.pages, topLevel, rules));
 }
 
 const wchar_t* LevelText(Level level) {
@@ -104,6 +95,24 @@ const wchar_t* IdentityTemplateText(const TemplateField& field) {
     return L"?";
 }
 
+// "; page <hwnd> (<module> template <id>), N pages" for the nearest page, "" without one.
+std::wstring PageText(const Entry& entry) {
+    if (entry.pages.empty()) {
+        return {};
+    }
+    const WindowIdentity& page = entry.pages.front();
+    wchar_t text[64];
+    swprintf_s(text, L"; page %p (", entry.nearestPage);
+    std::wstring result = text;
+    result += IdentityFieldText(page.module);
+    result += L" template ";
+    result += IdentityTemplateText(page.templateId);
+    swprintf_s(text, L"), %u page%s", static_cast<unsigned>(entry.pages.size()),
+               entry.pages.size() == 1 ? L"" : L"s");
+    result += text;
+    return result;
+}
+
 // One line per classification while diagnostic mode is on (FR-028). Never a title (FR-010).
 void LogClassification(HWND hwnd, const Entry& entry) {
     if (!log::IsVerbose()) {
@@ -113,15 +122,13 @@ void LogClassification(HWND hwnd, const Entry& entry) {
     const WindowIdentity& id = entry.identity;
     bool hasRule = !result.ruleOrigin.empty();
     log::Verbose(L"compat",
-                 L"window %p: %s (own %s, %s%s%s%s); %s %s %s template %s; top-level %p; "
-                 L"%u pages",
+                 L"window %p: %s (own %s, %s%s%s%s); %s %s %s template %s; top-level %p%s",
                  hwnd, LevelText(result.level), LevelText(result.ownLevel),
                  ReasonText(result.reason), hasRule ? L" \"" : L"", result.ruleOrigin.c_str(),
                  hasRule ? L"\"" : L"", IdentityFieldText(id.process),
                  IdentityFieldText(id.module), IdentityFieldText(id.windowClass),
                  IdentityTemplateText(id.templateId),
-                 entry.hasTopLevel ? entry.topLevelHwnd : hwnd,
-                 entry.pages ? static_cast<unsigned>(entry.pages->size()) : 0u);
+                 entry.hasTopLevel ? entry.topLevelHwnd : hwnd, PageText(entry).c_str());
 }
 
 // Tells listeners of each change. Call after the engine lock is released.
@@ -151,11 +158,9 @@ WindowClassification ClassifyOrThrow(HWND hwnd) {
     }
 
     std::shared_ptr<const RuleSet> rules;
-    std::uint64_t pagesEpoch = 0;
     {
         SharedLock lock(g_state.lock);
         rules = g_state.rules;
-        pagesEpoch = g_state.pagesEpoch;
         if (!rules) {
             return WindowClassification{};
         }
@@ -176,8 +181,9 @@ WindowClassification ClassifyOrThrow(HWND hwnd) {
         return Failure();
     }
 
-    // Read Windows and the dialog store outside the lock: module names take the loader lock,
-    // and the engine never holds its lock while taking the store's.
+    // Read Windows (window, hosted pages, top-level) and the dialog store outside the lock:
+    // module names take the loader lock, and the engine never holds its lock while taking
+    // the store's.
     Entry entry;
     entry.threadId = threadId;
     entry.classAtom = classAtom;
@@ -189,9 +195,14 @@ WindowClassification ClassifyOrThrow(HWND hwnd) {
         entry.hasTopLevel = true;
         entry.topLevelHwnd = topLevel;
         entry.topLevel = ReadIdentity(topLevel);
-    }
-    if (topLevel) {
-        entry.pages = PagesOf(topLevel);
+        std::vector<HWND> pages = HostedPagesOf(hwnd, topLevel);
+        if (!pages.empty()) {
+            entry.nearestPage = pages.front();
+        }
+        entry.pages.reserve(pages.size());
+        for (HWND page : pages) {
+            entry.pages.push_back(ReadIdentity(page));
+        }
     }
     entry.result = Evaluate(entry, *rules);
     if (entry.result.reason == Reason::Failure) {
@@ -203,9 +214,9 @@ WindowClassification ClassifyOrThrow(HWND hwnd) {
     LogClassification(hwnd, entry);
     WindowClassification result = entry.result;
     ExclusiveLock lock(g_state.lock);
-    // A newer rule set, or a page added to a sheet meanwhile, would make this entry stale:
-    // the next query classifies the window again.
-    if (g_state.rules == rules && g_state.pagesEpoch == pagesEpoch) {
+    // A newer rule set meanwhile would make this entry stale: the next query classifies the
+    // window again.
+    if (g_state.rules == rules) {
         if (g_state.cache.size() >= kSweepThreshold) {
             SweepDestroyedWindows();
         }
@@ -230,6 +241,7 @@ Level LevelOf(HWND hwnd) noexcept {
 }
 
 WindowClassification ClassifyIdentity(const WindowIdentity& window,
+                                      std::span<const WindowIdentity> pages,
                                       const WindowIdentity* topLevel) noexcept {
     try {
         std::shared_ptr<const RuleSet> rules;
@@ -241,7 +253,7 @@ WindowClassification ClassifyIdentity(const WindowIdentity& window,
             return WindowClassification{};
         }
         // The shared_ptr keeps the rule set alive while CopyOf reads the matched rule.
-        return CopyOf(Classify(window, {}, topLevel, *rules));
+        return CopyOf(Classify(window, pages, topLevel, *rules));
     } catch (...) {
         log::Warn(L"compat", L"identity classification failed: exception");
         return Failure();
@@ -282,42 +294,6 @@ void SetRuleSet(RuleSet rules) {
         return;
     }
     NotifyChanges(changes, L"settings changed");
-}
-
-void OnSheetPagesChanged(HWND sheet) noexcept {
-    std::vector<LevelChange> changes;
-    try {
-        PageList pages = PagesOf(sheet);  // before the engine lock (lock order)
-        ExclusiveLock lock(g_state.lock);
-        g_state.pagesEpoch++;
-        if (!g_state.rules) {
-            return;
-        }
-        for (auto& [hwnd, entry] : g_state.cache) {
-            bool isSheet = hwnd == sheet && !entry.hasTopLevel;
-            bool inSheet = entry.hasTopLevel && entry.topLevelHwnd == sheet;
-            if (!isSheet && !inSheet) {
-                continue;
-            }
-            entry.pages = pages;
-            Level oldLevel = entry.result.level;
-            entry.result = Evaluate(entry, *g_state.rules);
-            if (entry.result.level != oldLevel) {
-                changes.push_back(LevelChange{hwnd, oldLevel, entry.result.level});
-            }
-        }
-    } catch (...) {
-        // Out of memory mid-update: forget the sheet and its children so the next query
-        // classifies them again. Listeners are not told (FR-018).
-        log::Warn(L"compat", L"sheet %p: page update failed: exception; windows forgotten", sheet);
-        ExclusiveLock lock(g_state.lock);
-        std::erase_if(g_state.cache, [sheet](const auto& item) {
-            return item.first == sheet || item.second.topLevelHwnd == sheet;
-        });
-        g_state.pagesEpoch++;
-        return;
-    }
-    NotifyChanges(changes, L"sheet page added");
 }
 
 void ResetEngine() {
