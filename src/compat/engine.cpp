@@ -59,18 +59,9 @@ WindowClassification Failure() {
     return result;
 }
 
-// The pages of `topLevel` when the dialog hooks saw it as a property sheet, else null. An
-// incomplete list gets one page with every field Unknown: no rule matches it, so it lowers
-// the sheet to Native (FR-013a, FR-018). Reads the dialog store: call without engine locks.
-PageList PagesOf(HWND topLevel) {
-    SheetPages sheet = SheetPagesOf(topLevel);
-    if (!sheet.known) {
-        return nullptr;
-    }
-    if (sheet.incomplete) {
-        sheet.pages.emplace_back();
-    }
-    return std::make_shared<const std::vector<WindowIdentity>>(std::move(sheet.pages));
+// Bridge until T059 removes PageList: the dialog hooks no longer record a sheet's pages.
+PageList PagesOf(HWND) {
+    return nullptr;
 }
 
 WindowClassification Evaluate(const Entry& entry, const RuleSet& rules) {

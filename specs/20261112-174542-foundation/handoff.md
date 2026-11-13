@@ -1,6 +1,6 @@
 # Handoff: Foundation
 
-**Updated**: 2026-11-13 (T056 and T057 committed) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
+**Updated**: 2026-11-13 (T058 committed) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
 
 ## State
 
@@ -573,6 +573,36 @@ expected; T057 makes them pass. API fixed by the tests:
 - Results: `tools/test.py` 94/94 C++ and 43/43 Python; `build.py --check --compile` clean
   (3.0 s). Not installed (the mod stays disabled until T060).
 
+## T058 dialog hooks rewritten (2026-11-13, committed)
+
+`src/compat/dialog_hooks.h` / `.cpp` written fresh from research R8 (not from the spike). Public
+API is now only `InstallDialogHooks`, `UninstallDialogHooks`, `DialogTemplateOf`;
+`SheetPages` / `SheetPagesOf` are gone. Only `kernelbase` `FindResourceExW` / `FindResourceW`
+are hooked (checked with `grep`: no `user32` dialog, `comctl32` or `LoadLibrary*` hook left).
+
+- Non-`RT_DIALOG` calls go straight to the original (one comparison). For `RT_DIALOG`, a
+  per-thread `lookupDepth` keeps only the outermost call; a successful one is remembered
+  (`{module, name or id, tick}`, oldest first, 16 max, string names interned; a null module
+  is stored as the exe's handle) and arms the thread's `WH_CBT` hook.
+- `CbtProc`: `g_inFlight` incremented first and decremented as the last statement; drops
+  lookups older than 2 s at every callback; at `HCBT_CREATEWND` for a `#32770`
+  (`GetClassNameW`) takes the newest lookup for `lpcs->hInstance`, removes it and stores
+  `HWND → template` (verbose line with module, template and lookup age; "no lookup" also
+  verbose). After `CallNextHookEx`, if no lookup remains it disarms (registry entry out,
+  then `UnhookWindowsHookEx`).
+- Registry `{threadId, HHOOK}`: arming replaces an entry with the same thread ID (an exited
+  thread's) and, past 16 entries, prunes threads that are no longer running
+  (`OpenThread` + `GetExitCodeThread`). Arm re-checks `g_active` under the registry lock.
+- `UninstallDialogHooks`: `g_active = false` → swap the registry and unhook every hook → wait
+  (`Sleep(1)`) until `g_inFlight` is back to this thread's own CBT depth, no time limit, one
+  `log::Warn` past 1 s, one verbose line with the count and wait → clear the store.
+- **Bridge until T059**: `engine.cpp` `PagesOf` returns `nullptr` (the store has no pages);
+  `PageList`, `pagesEpoch` and `OnSheetPagesChanged` still exist, unused, and go in T059.
+- `-lcomctl32` removed from `@compilerOptions` in `header.txt` (no source uses comctl32 any
+  more); the DLL still compiles.
+- Results: `build.py --check --compile` clean (2.9 s); `tools/test.py` 94/94 C++, 43/43
+  Python. Not installed (mod stays disabled until T060).
+
 ## Next step
 
 1. T048 is committed (`feat: wire diagnostic mode into the mod`, not pushed). T044–T047 and
@@ -591,5 +621,6 @@ expected; T057 makes them pass. API fixed by the tests:
    updated. Points for the maintainer to confirm: the 2 s lookup expiry; the unload wait has
    no time limit (an unload that waits beats a crash); a property sheet frame is always
    `comctl32.dll` `1006`, so later specs choose sheets by a frame rule plus page rules.
-4. Replan committed (`59e86fe`). T055 done. T056–T057 committed (above). Next: T058
-   (rewrite dialog_hooks), T059, T060, then T050 again from step 1.
+4. Replan committed (`59e86fe`). T055 done. T056–T057 committed (above). T058 written
+   (above) and committed as `refactor: capture dialog templates without modal hooks` (not
+   pushed). Next: T059, T060, then T050 again from step 1.
