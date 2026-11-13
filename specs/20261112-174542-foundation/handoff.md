@@ -1,6 +1,6 @@
 # Handoff: Foundation
 
-**Updated**: 2026-11-13 (US4: T039 runtime snapshot committed) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
+**Updated**: 2026-11-13 (US4 complete: T040 committed) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
 
 ## State
 
@@ -277,10 +277,25 @@ Included in `main.cpp` but **not called yet** (T040).
 - Results: `build.py --check --compile` clean; `tools/test.py` 74/74 C++, 43/43 Python. Not
   installed or checked live (nothing calls it until T040).
 
+## T040 wiring (2026-11-13)
+
+`Wh_ModInit`: `worker::Start` → `tokens::system::Start(tokens::OnSystemInputs, nullptr)` →
+dialog hooks → settings. `Wh_ModUninit`: dialog hooks off → `system::Stop` → `worker::Stop`
+→ `ResetTokens` → `ResetEngine`.
+
+- Live check: at load `[tokens] resolved: mode dark, accent #0078D4, text scale 1.00, font
+  Segoe UI Variable`. App mode toggled light and back (registry `AppsUseLightTheme` plus a
+  `WM_SETTINGCHANGE "ImmersiveColorSet"` broadcast, then restored): with the PID added to the
+  line for a moment (reverted), each `explorer.exe` (3 running) logged **one** line per change.
+  Skip rule works; no repeats.
+- Watching the log: the DBWIN capture (scratch script, not in the repo) **drops lines** when
+  several explorer processes write at once, so a line missing from it is not proof of
+  anything. Count lines per PID, or use Windhawk's log view.
+- Results: `build.py --check --compile` clean; `tools/test.py` 74/74 C++, 43/43 Python; the
+  clean build is installed.
+
 ## Next step
 
-1. T039 committed as `feat: add token runtime snapshot` (not pushed).
-2. T040: in `Wh_ModInit` call `tokens::system::Start(tokens::OnSystemInputs, nullptr)` after
-   `worker::Start`; in `Wh_ModUninit` call `system::Stop()` before `worker::Stop()`, then
-   `ResetTokens()` (after `worker::Stop`). Live check: the `[tokens] resolved` line at load
-   and once per real change (no repeats).
+1. T040 committed as `feat: wire token system into mod lifecycle`
+   (not pushed). US4 is complete.
+2. Phase 6 / US3 (diagnostic overlay), starting at T041.

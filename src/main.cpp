@@ -55,6 +55,7 @@ BOOL Wh_ModInit() {
     // A worker that does not start leaves the tokens on their defaults and the diagnostic
     // overlay off; window classification does not need it, so the mod still loads.
     wholeui::worker::Start();
+    wholeui::tokens::system::Start(wholeui::tokens::OnSystemInputs, nullptr);
     wholeui::compat::InstallDialogHooks();
     ApplySettings(L"loaded");
     return TRUE;
@@ -66,6 +67,9 @@ void Wh_ModSettingsChanged() {
 
 void Wh_ModUninit() {
     wholeui::compat::UninstallDialogHooks();
+    // system::Stop posts the WinRT release to the worker; worker::Stop runs it and waits.
+    wholeui::tokens::system::Stop();
     wholeui::worker::Stop();
+    wholeui::tokens::ResetTokens();
     wholeui::compat::ResetEngine();
 }
