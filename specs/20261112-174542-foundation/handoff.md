@@ -1,6 +1,6 @@
 # Handoff: Foundation
 
-**Updated**: 2026-11-13 (US2 complete: T034 dialogs wired into classification) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
+**Updated**: 2026-11-13 (US4: T035 tests and T036 resolver committed) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
 
 ## State
 
@@ -166,6 +166,38 @@ disable/enable` does not reload the DLL; `build.py --install` or a settings chan
 The live check of `[settings] loaded/changed` lines passed (diagnostic mode is now on in the
 local install).
 
+## US4 API fixed by the tests (T035)
+
+`tests/unit/tokens_test.cpp` (15 tests, T035) and `src/tokens/tokens.h` / `tokens.cpp`
+(T036, **PURE**) are written and pass (`tools/test.py` 72/72 C++, 43/43 Python;
+`build.py --check --compile` clean). Committed as `feat: add design token resolver` (not
+pushed). `main.cpp` does not include the tokens yet (T040).
+
+Toolchain gotcha found here: with clang 20.1, a `const T&` parameter whose default argument is
+a constexpr object always reads the default, even when another object is passed (-O0 and
+-O2). The test helper takes the accent set by value; avoid that pattern in the mod too.
+
+`src/tokens/tokens.h`, namespace `wholeui::tokens` (T036, **PURE**):
+
+- `TokenInputs { bool dark; uint32_t accent, accentLight1..3, accentDark1..3; float textScale;
+  bool variableFontAvailable; }`; `TokenInputs DefaultInputs()` (the failure defaults;
+  `variableFontAvailable = true`, not checked by the tests).
+- `TypeStyle { float size; float lineHeight; int weight; std::wstring gdiFace; }` with weight
+  400 (Regular) / 600 (Semibold).
+- `Spacing { int xs, s, m, l, xl, xxl; }` (4, 8, 12, 16, 24, 32).
+- `Tokens`: `bool dark`; `std::wstring fontFamily`; `TypeStyle caption, body, bodyStrong,
+  subtitle, title, titleLarge, display`; `int radiusControl, radiusOverlay, radiusMenuHover,
+  radiusListSelection, radiusGridSelection`; `Spacing spacing`; `int heightControl,
+  heightControlCompact, heightListRow, heightMenuItem, heightNavItem, focusOuter,
+  focusInner`; `float selectionAccentOpacity`; every color of data-model.md as `uint32_t`
+  ARGB with the same name.
+- `Tokens Resolve(const TokenInputs&)`.
+
+Interpretations the tests encode, recorded in data-model.md: "X at N %" keeps X's RGB and
+sets alpha to round(N % × 255) (90 % → `E6`, 60 % → `99`); the 20 px Text/Display split uses
+the **scaled** size (at 150 % `body` is 21 px → Display).
+
 ## Next step
 
-1. Phase 5 (US4, design tokens): T035 tests, then T036–T040.
+1. Phase 5 (US4): T037 (worker thread), T038 (system reads), T039 (runtime snapshot), T040
+   (wiring in `main.cpp`).

@@ -96,6 +96,8 @@ Defaults when a system read fails: `dark = false`, accent `#0078D4`, light 1–3
 
 Font family: "Segoe UI Variable" if available, else "Segoe UI". GDI face: "Segoe UI Variable
 Text" below 20 px, "Segoe UI Variable Display" from 20 px; "Segoe UI" when not available.
+The 20 px split compares the scaled size (after `textScale`): at 150 % `body` is 21 px and
+uses the Display face.
 
 | Token | Size / line height (px at 100 %) | Weight |
 |---|---|---|
@@ -151,6 +153,9 @@ Size and line height are multiplied by `textScale` (unrounded floats). Nothing e
 | `selectionFill` | `accent` at `selectionAccentOpacity` | same |
 | `focusStrokeOuter` | `E4000000` | `FFFFFFFF` |
 | `focusStrokeInner` | `B3FFFFFF` | `B3000000` |
+
+"`X` at N %" keeps X's color and sets its alpha to N % of 255 rounded to nearest (90 % →
+`E6`, 60 % → `99`), as WinUI applies a brush opacity.
 
 Values follow WinUI 3 theme resources; a later spec that finds a value wrong on a running
 system corrects it here (and in the code), not locally.
