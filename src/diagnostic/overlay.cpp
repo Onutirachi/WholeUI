@@ -8,6 +8,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
+#include <optional>
 #include <string_view>
 
 #include "../compat/engine.h"
@@ -38,6 +40,7 @@ struct Tracking {
     double lastTick = 0;       // ms (QueryPerformanceCounter) of the previous tick
     double movedAfter = 0;     // the cursor was last seen elsewhere at this time: it came to
                                // rest after it, so now - movedAfter bounds the delay (SC-005)
+    bool shortcutDown = false; // Ctrl+Alt+Shift+C was held at the last tick (edge trigger)
 };
 
 // Everything the overlay owns. Touched only on the worker thread, so no lock.
@@ -510,14 +513,108 @@ void Refresh(POINT cursor, HWND hwnd) noexcept {
     Show(cursor, text);
 }
 
+// True on the tick Ctrl+Alt+Shift+C becomes held (R14). Polled, so the keystroke still
+// reaches the foreground app (FR-022); a press shorter than one tick can be missed.
+bool ShortcutPressed() noexcept {
+    auto held = [](int key) { return (GetAsyncKeyState(key) & 0x8000) != 0; };
+    const bool down = held(VK_CONTROL) && held(VK_MENU) && held(VK_SHIFT) && held('C');
+    const bool pressed = down && !g.tracking.shortcutDown;
+    g.tracking.shortcutDown = down;
+    return pressed;
+}
+
+// "<CurrentBuild>.<UBR>" from the registry, or empty when either read fails.
+std::wstring ReadBuild() {
+    constexpr wchar_t kKey[] = L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion";
+    std::optional<std::wstring> currentBuild;
+    wchar_t buffer[64] = {};
+    DWORD bytes = sizeof(buffer);
+    if (RegGetValueW(HKEY_LOCAL_MACHINE, kKey, L"CurrentBuild", RRF_RT_REG_SZ, nullptr, buffer,
+                     &bytes) == ERROR_SUCCESS) {
+        currentBuild = buffer;
+    }
+    std::optional<std::uint32_t> ubr;
+    DWORD value = 0;
+    bytes = sizeof(value);
+    if (RegGetValueW(HKEY_LOCAL_MACHINE, kKey, L"UBR", RRF_RT_REG_DWORD, nullptr, &value,
+                     &bytes) == ERROR_SUCCESS) {
+        ubr = value;
+    }
+    return BuildText(currentBuild, ubr);
+}
+
+// Puts `text` on the clipboard as CF_UNICODETEXT, owned by the overlay window. False on
+// failure (another app holding the clipboard, out of memory), logged.
+bool SetClipboardText(const std::wstring& text) noexcept {
+    const SIZE_T bytes = (text.size() + 1) * sizeof(wchar_t);
+    HGLOBAL memory = GlobalAlloc(GMEM_MOVEABLE, bytes);
+    if (memory == nullptr) {
+        log::Warn(L"diagnostic", L"copy: GlobalAlloc failed: %lu", GetLastError());
+        return false;
+    }
+    void* locked = GlobalLock(memory);
+    if (locked == nullptr) {
+        log::Warn(L"diagnostic", L"copy: GlobalLock failed: %lu", GetLastError());
+        GlobalFree(memory);
+        return false;
+    }
+    std::memcpy(locked, text.c_str(), bytes);
+    GlobalUnlock(memory);
+
+    if (!OpenClipboard(g.window)) {
+        log::Warn(L"diagnostic", L"copy: OpenClipboard failed: %lu; nothing copied",
+                  GetLastError());
+        GlobalFree(memory);
+        return false;
+    }
+    bool copied = false;
+    if (!EmptyClipboard()) {
+        log::Warn(L"diagnostic", L"copy: EmptyClipboard failed: %lu", GetLastError());
+    } else if (SetClipboardData(CF_UNICODETEXT, memory) == nullptr) {
+        log::Warn(L"diagnostic", L"copy: SetClipboardData failed: %lu", GetLastError());
+    } else {
+        copied = true;  // the clipboard owns `memory` now
+    }
+    CloseClipboard();
+    if (!copied) {
+        GlobalFree(memory);
+    }
+    return copied;
+}
+
+// Copies the top-level window of `hwnd` as an override line and a compatibility-list row at
+// its current effective level (FR-021b, contracts/compatibility-doc.md "Clipboard").
+void Copy(HWND hwnd) noexcept {
+    try {
+        HWND topLevel = compat::TopLevelOf(hwnd);
+        if (topLevel == nullptr) {
+            return;  // destroyed since WindowFromPoint
+        }
+        DWORD pid = 0;
+        GetWindowThreadProcessId(topLevel, &pid);
+        compat::WindowIdentity top = compat::ReadIdentity(topLevel);
+        compat::Level level = pid == GetCurrentProcessId()
+                                  ? compat::Classify(topLevel).level
+                                  : compat::ClassifyIdentity(top, nullptr).level;
+        std::wstring text = ClipboardText(top, level, ReadBuild());
+        if (SetClipboardText(text)) {
+            log::Verbose(L"diagnostic", L"copied: %s", text.c_str());
+        }
+    } catch (...) {
+        log::Warn(L"diagnostic", L"copy: out of memory; nothing copied");
+    }
+}
+
 // One timer tick (R14): follow the cursor; refresh when the window under it changes and once
-// kRestMs after it stops. Read-only towards the inspected window (FR-022).
+// kRestMs after it stops; copy on Ctrl+Alt+Shift+C. Read-only towards the inspected window
+// (FR-022).
 void Tick() noexcept {
     Tracking& t = g.tracking;
     if (!t.on) {
         return;
     }
     PerMonitorDpiScope dpiScope;  // physical pixels, like the overlay (overlay.h)
+    const bool copy = ShortcutPressed();
     const double now = NowMs();
     const double previousTick = t.lastTick;
     t.lastTick = now;
@@ -545,6 +642,9 @@ void Tick() noexcept {
         HideWindow();
         t.shown = nullptr;
         return;
+    }
+    if (copy) {
+        Copy(under);
     }
     if (under != t.shown) {
         Refresh(cursor, under);

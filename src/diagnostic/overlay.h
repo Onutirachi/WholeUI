@@ -42,7 +42,10 @@ void Destroy() noexcept;
 // under the cursor and its top-level window are identified and classified (in this process
 // through the engine, in another process with ClassifyIdentity) when that window changes and
 // once 100 ms after the cursor stops, with one log::Verbose line giving the time from rest to
-// update. No input hooks. Returns false (logged) when the window or timer cannot be made.
+// update. The same tick polls Ctrl+Alt+Shift+C with GetAsyncKeyState (edge-triggered, not
+// swallowed) and copies the top-level window's override line and compatibility-list row to
+// the clipboard (FR-021b). No input hooks. Returns false (logged) when the window or timer
+// cannot be made.
 // Calling it while tracking does nothing and returns true.
 bool StartTracking() noexcept;
 

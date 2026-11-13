@@ -1,6 +1,6 @@
 # Handoff: Foundation
 
-**Updated**: 2026-11-13 (US3: T045 done, not committed) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
+**Updated**: 2026-11-13 (US3: T046 done, not committed) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
 
 ## State
 
@@ -400,8 +400,39 @@ and `void StopTracking()` (`noexcept`). Not called from `main.cpp` yet: T047's
 - Results: `build.py --check --compile` clean; `tools/test.py` 91/91 C++, 43/43 Python; the
   clean build is installed.
 
+## T046 copy shortcut (2026-11-13)
+
+In `src/diagnostic/overlay.cpp`, in the T045 tick (no new public API; overlay.h comment
+updated).
+
+- `ShortcutPressed()` runs first in every tick (also when `GetCursorPos` fails, so the edge
+  state stays right): `GetAsyncKeyState` high bit of Ctrl, Alt, Shift and C; true only on the
+  tick the chord becomes held (`Tracking::shortcutDown`). Polled, never swallowed (FR-022); a
+  press shorter than one 50 ms tick can be missed (accepted).
+- `Copy(under)` runs after `WindowFromPoint` (null → nothing copied) and before the refresh:
+  `TopLevelOf`, `ReadIdentity(topLevel)`, level = `Classify(topLevel).level` in this process or
+  `ClassifyIdentity(top, nullptr).level` otherwise (the top-level's effective level, contract
+  "Clipboard"); text from `ClipboardText(top, level, ReadBuild())`.
+- `ReadBuild()`: `RegGetValueW` `CurrentBuild` (`RRF_RT_REG_SZ`) and `UBR`
+  (`RRF_RT_REG_DWORD`) from `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion`, then
+  `BuildText`. advapi32 is linked by default (no `@compilerOptions` change).
+- `SetClipboardText()`: `GlobalAlloc(GMEM_MOVEABLE)` → `OpenClipboard(overlay)` →
+  `EmptyClipboard` → `SetClipboardData(CF_UNICODETEXT)`; the memory is freed only if the
+  clipboard did not take it. Each failure logs one `log::Warn` (e.g. another app holds the
+  clipboard); success logs `copied: <text>` at verbose.
+- Readme already says the shortcut is observed, not captured (T006); no change.
+- Live check (temporary code, reverted: `StartTracking` in the shell process, `Destroy` at
+  uninit; cursor moved and keys sent with `SetCursorPos` / `keybd_event`): secondary taskbar →
+  `process=explorer.exe; module=taskbar.dll; class=Shell_SecondaryTrayWnd; level=native` and
+  its row with build `26300.9711`; VS Code → `process=code.exe; class=Chrome_WidgetWin_1;
+  level=native`, row with `—` (U+2014) for module, template and Validated. Holding the chord
+  for 700 ms copied once (clipboard overwritten after the first copy stayed unchanged).
+- Results: `build.py --check --compile` clean; `tools/test.py` 91/91 C++, 43/43 Python; the
+  clean build is installed.
+
 ## Next step
 
-1. Maintainer validates T045; commit as `feat: add cursor tracking to diagnostic overlay`
-   (not pushed). T044 and earlier US3/US4 commits are also unpushed.
-2. T046 copy shortcut (Ctrl+Alt+Shift+C, `RegGetValueW` build, clipboard), in the same tick.
+1. Maintainer validates T046; commit as `feat: add copy shortcut to diagnostic overlay`
+   (not pushed). T044, T045 and earlier US3/US4 commits are also unpushed.
+2. T047 single instance (`Local\WholeUI.Diagnostic` mutex) and `diagnostic::Start()` /
+   `Stop()`, then T048 wiring in `main.cpp`.
