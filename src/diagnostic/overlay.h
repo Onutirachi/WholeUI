@@ -34,7 +34,20 @@ void Follow(POINT cursor) noexcept;
 void Hide() noexcept;
 
 // Destroys the window and releases every drawing resource (diagnostic mode off, unload).
+// Stops tracking too.
 void Destroy() noexcept;
+
+// Cursor tracking (research R14, SC-005): a 50 ms timer on the overlay window reads
+// GetCursorPos and WindowFromPoint. The overlay follows the cursor on every tick; the window
+// under the cursor and its top-level window are identified and classified (in this process
+// through the engine, in another process with ClassifyIdentity) when that window changes and
+// once 100 ms after the cursor stops, with one log::Verbose line giving the time from rest to
+// update. No input hooks. Returns false (logged) when the window or timer cannot be made.
+// Calling it while tracking does nothing and returns true.
+bool StartTracking() noexcept;
+
+// Kills the timer and hides the overlay; the window is kept (Destroy releases it).
+void StopTracking() noexcept;
 
 }  // namespace wholeui::diagnostic::overlay
 

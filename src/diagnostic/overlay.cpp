@@ -10,10 +10,13 @@
 #include <cstdint>
 #include <string_view>
 
+#include "../compat/engine.h"
+#include "../compat/identity.h"
 #include "../core/com.h"
 #include "../core/log.h"
 #include "../core/worker.h"
 #include "../tokens/runtime.h"
+#include "format.h"
 
 namespace wholeui::diagnostic::overlay {
 namespace {
@@ -21,6 +24,21 @@ namespace {
 constexpr wchar_t kWindowClass[] = L"WholeUI.Diagnostic";
 constexpr int kCursorGap = 16;   // px at 96 DPI between the cursor and the overlay (R14)
 constexpr float kLayoutMax = 100000.0f;  // "no limit" for a text layout, in DIPs
+constexpr UINT_PTR kTimerId = 1;
+constexpr UINT kTickMs = 50;      // cursor polling interval (R14)
+constexpr double kRestMs = 100;   // refresh this long after the cursor stops (R14)
+
+// Cursor tracking state (worker thread only).
+struct Tracking {
+    bool on = false;
+    bool havePoint = false;    // `point` holds a position read on an earlier tick
+    POINT point = {};          // cursor position at the last tick
+    HWND shown = nullptr;      // window whose identity the overlay shows
+    bool restPending = false;  // the cursor moved; refresh once it has been still kRestMs
+    double lastTick = 0;       // ms (QueryPerformanceCounter) of the previous tick
+    double movedAfter = 0;     // the cursor was last seen elsewhere at this time: it came to
+                               // rest after it, so now - movedAfter bounds the delay (SC-005)
+};
 
 // Everything the overlay owns. Touched only on the worker thread, so no lock.
 struct State {
@@ -41,9 +59,13 @@ struct State {
     SIZE size = {};    // the overlay in physical px, as last drawn
     UINT dpi = 0;      // the DPI it was drawn for
     std::wstring text; // the text it shows, for a redraw on a DPI change
+
+    Tracking tracking;
 };
 
 State g;
+
+void Tick() noexcept;
 
 // Per-monitor-v2 awareness for the calling thread while in scope, so cursor positions,
 // monitor rectangles and the window's size are all physical pixels.
@@ -80,6 +102,12 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
         case WM_DPICHANGED:
             // The size comes from UpdateLayeredWindow; Follow redraws for the new DPI.
             return 0;
+        case WM_TIMER:
+            if (wParam == kTimerId) {
+                Tick();
+                return 0;
+            }
+            return DefWindowProcW(window, message, wParam, lParam);
         default:
             return DefWindowProcW(window, message, wParam, lParam);
     }
@@ -433,6 +461,107 @@ bool ShowNow(POINT cursor, const std::wstring& text) noexcept {
     return true;
 }
 
+// Milliseconds from QueryPerformanceCounter (never fails on supported Windows).
+double NowMs() noexcept {
+    static const double frequency = [] {
+        LARGE_INTEGER value = {};
+        QueryPerformanceFrequency(&value);
+        return static_cast<double>(value.QuadPart);
+    }();
+    LARGE_INTEGER counter = {};
+    QueryPerformanceCounter(&counter);
+    return static_cast<double>(counter.QuadPart) * 1000.0 / frequency;
+}
+
+// The overlay text for `hwnd` and its top-level window. A window of this process is
+// classified by the engine (cached, with pages); a window of another process by its rules
+// only (FR-021). False when the window is gone, or memory ran out (logged).
+bool Describe(HWND hwnd, std::wstring& text) noexcept {
+    try {
+        HWND topLevel = compat::TopLevelOf(hwnd);
+        if (topLevel == nullptr) {
+            return false;  // destroyed since WindowFromPoint
+        }
+        DWORD pid = 0;
+        GetWindowThreadProcessId(hwnd, &pid);
+        const bool inProcess = pid == GetCurrentProcessId();
+        const bool isTopLevel = topLevel == hwnd;
+        compat::WindowIdentity window = compat::ReadIdentity(hwnd);
+        compat::WindowIdentity top = isTopLevel ? window : compat::ReadIdentity(topLevel);
+        compat::WindowClassification classification =
+            inProcess ? compat::Classify(hwnd)
+                      : compat::ClassifyIdentity(window, isTopLevel ? nullptr : &top);
+        text = OverlayText(window, top, classification, inProcess);
+        return true;
+    } catch (...) {
+        Fail(L"identifying the window", E_OUTOFMEMORY);
+        return false;
+    }
+}
+
+// Identifies `hwnd` and shows it next to `cursor`; hides the overlay when that fails.
+void Refresh(POINT cursor, HWND hwnd) noexcept {
+    g.tracking.shown = hwnd;  // also on failure: retried on the next change or rest
+    std::wstring text;
+    if (!Describe(hwnd, text)) {
+        HideWindow();
+        return;
+    }
+    Show(cursor, text);
+}
+
+// One timer tick (R14): follow the cursor; refresh when the window under it changes and once
+// kRestMs after it stops. Read-only towards the inspected window (FR-022).
+void Tick() noexcept {
+    Tracking& t = g.tracking;
+    if (!t.on) {
+        return;
+    }
+    PerMonitorDpiScope dpiScope;  // physical pixels, like the overlay (overlay.h)
+    const double now = NowMs();
+    const double previousTick = t.lastTick;
+    t.lastTick = now;
+
+    POINT cursor = {};
+    if (!GetCursorPos(&cursor)) {
+        // No input desktop (secure desktop, locked session): nothing to inspect.
+        HideWindow();
+        t.havePoint = false;
+        t.shown = nullptr;
+        t.restPending = false;
+        return;
+    }
+    const bool moved =
+        !t.havePoint || cursor.x != t.point.x || cursor.y != t.point.y;
+    if (moved) {
+        t.restPending = true;
+        t.movedAfter = t.havePoint ? previousTick : now;
+    }
+    t.point = cursor;
+    t.havePoint = true;
+
+    HWND under = WindowFromPoint(cursor);
+    if (under == nullptr) {
+        HideWindow();
+        t.shown = nullptr;
+        return;
+    }
+    if (under != t.shown) {
+        Refresh(cursor, under);
+        return;
+    }
+    if (moved) {
+        Follow(cursor);
+        return;
+    }
+    if (t.restPending && now - t.movedAfter >= kRestMs) {
+        t.restPending = false;
+        Refresh(cursor, under);
+        log::Verbose(L"diagnostic", L"overlay updated at most %.0f ms after the cursor came to rest",
+                     NowMs() - t.movedAfter);
+    }
+}
+
 }  // namespace
 
 bool Show(POINT cursor, const std::wstring& text) noexcept {
@@ -482,9 +611,10 @@ void Destroy() noexcept {
         return;
     }
     if (g.window != nullptr) {
-        DestroyWindow(g.window);
+        DestroyWindow(g.window);  // kills the tracking timer too
         g.window = nullptr;
     }
+    g.tracking = Tracking{};
     g.visible = false;
     if (g.classRegistered) {
         UnregisterClassW(kWindowClass, ModuleInstance());
@@ -503,6 +633,38 @@ void Destroy() noexcept {
     g.text.clear();
     g.text.shrink_to_fit();
     g.warned = false;
+}
+
+bool StartTracking() noexcept {
+    if (!OnWorker(L"StartTracking")) {
+        return false;
+    }
+    if (g.tracking.on) {
+        return true;
+    }
+    if (!EnsureWindow()) {
+        return false;  // logged by Fail
+    }
+    if (SetTimer(g.window, kTimerId, kTickMs, nullptr) == 0) {
+        log::Warn(L"diagnostic", L"overlay: SetTimer failed: %lu; cursor not tracked",
+                  GetLastError());
+        return false;
+    }
+    g.tracking = Tracking{};
+    g.tracking.on = true;
+    g.tracking.lastTick = NowMs();
+    return true;
+}
+
+void StopTracking() noexcept {
+    if (!OnWorker(L"StopTracking")) {
+        return;
+    }
+    if (g.tracking.on && g.window != nullptr) {
+        KillTimer(g.window, kTimerId);
+    }
+    g.tracking = Tracking{};
+    HideWindow();
 }
 
 }  // namespace wholeui::diagnostic::overlay

@@ -1,6 +1,6 @@
 # Handoff: Foundation
 
-**Updated**: 2026-11-13 (US3: T044 committed) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
+**Updated**: 2026-11-13 (US3: T045 done, not committed) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
 
 ## State
 
@@ -368,8 +368,40 @@ logic is `compat::Classify`, already covered).
 - Results: `build.py --check --compile` clean; `tools/test.py` 91/91 C++, 43/43 Python; the
   clean build is installed.
 
+## T045 cursor tracking (2026-11-13)
+
+In `src/diagnostic/overlay.h` / `overlay.cpp`, worker thread only: `bool StartTracking()`
+and `void StopTracking()` (`noexcept`). Not called from `main.cpp` yet: T047's
+`diagnostic::Start()` / `Stop()` wrap them (mutex first), T048 wires them.
+
+- Timer: `SetTimer(overlay window, 1, 50 ms)`, handled in `WindowProc` (`WM_TIMER`), so
+  `Destroy` kills it with the window. `StartTracking` creates the window (hidden) if needed;
+  `StopTracking` kills the timer and hides the overlay, keeping the window.
+- Each tick runs under per-monitor-v2 awareness: `GetCursorPos` (failure, e.g. secure
+  desktop → hide, forget the shown window), `WindowFromPoint` (null → hide). A new window
+  under the cursor → refresh at once; same window and the cursor moved → `Follow`; the cursor
+  still and `now − movedAfter ≥ 100 ms` → one refresh at rest plus a `log::Verbose`
+  (`overlay updated at most N ms after the cursor came to rest`). `movedAfter` is the time
+  of the previous tick when the cursor was seen elsewhere, so N is an upper bound of the
+  delay from rest (SC-005). Times from `QueryPerformanceCounter`.
+- Refresh: `TopLevelOf` (null → window gone, hide); in this process `compat::Classify(hwnd)`
+  (cached engine, pages included), otherwise `ClassifyIdentity(window, top or nullptr)`;
+  identities from `ReadIdentity`; text from `OverlayText`. `bad_alloc` → the overlay's one
+  warning, hidden. The shown window is remembered even when drawing failed, so it is retried
+  on the next window change or rest, not on every tick.
+- Live check (temporary code, reverted: `StartTracking` posted in the shell process only,
+  `Destroy` posted at uninit; cursor driven with `SetCursorPos`, screenshots): taskbar →
+  `Shell_TrayWnd · explorer.exe`, `native · shell surface · Taskbar`, overlay above the
+  cursor (bottom edge); VS Code → `Chrome_RenderWidgetHostHWND`, top-level
+  `Chrome_WidgetWin_1`, `code.exe (not running WholeUI)`, `native · default`; near the right
+  edge the overlay flips left. Logged rest delays 123–127 ms (budget 200 ms).
+- Module `unknown` for VS Code is correct: Electron/Chrome windows have a null
+  `GWLP_HINSTANCE` (checked with a probe script).
+- Results: `build.py --check --compile` clean; `tools/test.py` 91/91 C++, 43/43 Python; the
+  clean build is installed.
+
 ## Next step
 
-1. T044 committed as `feat: add diagnostic overlay window` (not pushed).
-   Earlier US3/US4 commits are also unpushed.
-2. T045 cursor tracking (timer, refresh rules, identity + classification, SC-005 timing).
+1. Maintainer validates T045; commit as `feat: add cursor tracking to diagnostic overlay`
+   (not pushed). T044 and earlier US3/US4 commits are also unpushed.
+2. T046 copy shortcut (Ctrl+Alt+Shift+C, `RegGetValueW` build, clipboard), in the same tick.
