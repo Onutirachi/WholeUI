@@ -5,6 +5,7 @@ only by maintainer decision.
 
 1. Foundation: source layout, build script that generates the single `.wh.cpp`, CI with the
    Windhawk compiler, design tokens, compatibility list engine and diagnostic mode (F10, F11).
+   **Implemented** (`specs/20261112-174542-foundation/`).
 2. Explorer core: GPU file view, page transitions, Segoe UI Variable (F01, F02, F06).
 3. GPU navigation pane matching the file view (F03).
 4. Explorer backdrop with the three materials of S5 (F05). Starts with research on Mica,

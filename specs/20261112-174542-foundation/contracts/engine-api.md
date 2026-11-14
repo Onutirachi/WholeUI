@@ -23,8 +23,8 @@ struct WindowClassification {
 };
 
 // Safe from any thread. Never throws. Any failure yields Level::Native (FR-018).
-WindowClassification Classify(HWND hwnd);
-Level LevelOf(HWND hwnd);   // Classify(hwnd).level
+WindowClassification Classify(HWND hwnd) noexcept;
+Level LevelOf(HWND hwnd) noexcept;   // Classify(hwnd).level
 
 // Called after a cached window's effective level changes (settings edited).
 // The callback runs on the thread that caused the change, without engine locks held.

@@ -34,3 +34,11 @@ overrides cannot change that (FR-015). Start is a separate process
 | Desktop | explorer.exe | Progman |
 | Desktop wallpaper | explorer.exe | WorkerW |
 | Input switcher | explorer.exe | Shell_InputSwitchTopLevelWindow |
+
+Checked with diagnostic mode and a window list on Windows 11 build 26300.9711 (2026-11-13):
+`Shell_TrayWnd`, `Shell_SecondaryTrayWnd`, `TopLevelWindowForOverflowXamlIsland`, `Progman`
+and `WorkerW` exist in `explorer.exe`. Not seen on that build: `NotifyIconOverflowWindow`
+(the overflow is the XAML window), `XamlExplorerHostIslandWindow` (Task View and Alt+Tab were
+replaced by another mod on that machine) and `Shell_InputSwitchTopLevelWindow` (Win+Space
+created no `explorer.exe` window). They stay listed: a locked row that matches nothing costs
+nothing, and removing one could let an override reach a shell surface on another build.

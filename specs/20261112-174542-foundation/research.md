@@ -136,6 +136,9 @@ found of a localized readme block.
 - **Verify** at acceptance step 7: with Windhawk in pt-BR, name, description and settings show
   in Portuguese; with Windhawk in another language, English shows. If `$name:pt-BR` is not
   honored by the maintainer's version, the setting stays English and this item is updated.
+- **Verified** (T050 run 2, step 10, Windhawk 2.0.0-alpha.6): with Windhawk in Português
+  (Brasil), name, description and every setting's title and description show in Portuguese;
+  the readme shows its Portuguese section. `$name:pt-BR` and `$description:pt-BR` are honored.
 
 **Alternatives**: separate pt-BR mod: rejected (one mod, id `wholeui`).
 
@@ -403,6 +406,9 @@ acceptance: `Shell_TrayWnd`, `Shell_SecondaryTrayWnd`, `NotifyIconOverflowWindow
 `TopLevelWindowForOverflowXamlIsland`, `XamlExplorerHostIslandWindow`, `Progman`, `WorkerW`,
 `Shell_InputSwitchTopLevelWindow`. Start is a separate process
 (`StartMenuExperienceHost.exe`), where the mod does not run.
+
+**Verified** (T051, build 26300.9711): five rows confirmed live; three not seen on that build
+and kept as locked rows (details under the table in `docs/compatibility.md`).
 
 ## R10. Overrides setting format (FR-016, FR-017, FR-021b)
 

@@ -7,9 +7,10 @@ principles, scope and workflow, and it overrides this guide.
 
 ## Status
 
-New project. No spec is written yet. Features are listed with IDs in
+The foundation spec (`specs/20261112-174542-foundation/`) is implemented: build script, CI,
+compatibility engine, design tokens and diagnostic mode. Features are listed with IDs in
 [docs/product.md](docs/product.md) and the order of specs is in
-[docs/roadmap.md](docs/roadmap.md).
+[docs/roadmap.md](docs/roadmap.md); the next spec is Explorer core.
 
 ## Starting a session
 

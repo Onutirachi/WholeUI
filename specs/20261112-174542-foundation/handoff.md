@@ -1,16 +1,12 @@
 # Handoff: Foundation
 
-**Updated**: 2026-11-13 (T050 run 2 passed) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
+**Updated**: 2026-11-13 (Polish T051–T054 done; all tasks done) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
 
 ## State
 
-Spec, plan, tasks, Phase 1, Phase 2 and US1 (T012–T019) done and committed. The branch is on
-GitHub with draft pull request #1; CI ("Build and test") passes in about 35 s. US2 tests and
-pure logic (T020–T027) are committed (not pushed yet). T028–T030 (settings, identity, engine)
-and T031 (wiring in `main.cpp`) are committed as `feat: add settings, window identity and
-compatibility engine` (not pushed yet). T033 committed as `feat: add dialog and property
-sheet hooks`. T034 committed as `feat: wire dialog facts into classification`; US2 is complete.
-None of the US2 commits are pushed yet.
+**Every task is done** (T001–T060). The spec is implemented and passed live acceptance (T050
+run 2). Polish (T051–T054) is committed as `docs: finish the foundation polish`. Commits
+after the first push of draft pull request #1 are not pushed yet.
 
 US1 results kept for reference: `build.py` writes in 3 ms, `--compile` about 1.2 s (SC-001
 < 30 s met); `test.py` 7/7 C++ and 24/24 Python; `--install` loads the DLL in `explorer.exe`
@@ -692,29 +688,28 @@ after T060). An independent inspector (scratchpad `inspect.py`: `WindowFromPoint
   off they are not in the log; that is expected.
 - State left: mod **disabled** in Windhawk (from step 11), no overrides, diagnostic mode off.
 
+## T051–T054 polish (2026-11-13)
+
+- T051: top-level `explorer.exe` windows listed on build 26300.9711 (5 monitors), plus a
+  watcher while the maintainer opened Task View, Win+Space, the notification overflow and
+  Alt+Tab. Confirmed: `Shell_TrayWnd`, `Shell_SecondaryTrayWnd` (4), `Progman`, `WorkerW`,
+  `TopLevelWindowForOverflowXamlIsland`. Not seen: `NotifyIconOverflowWindow`,
+  `XamlExplorerHostIslandWindow` (Task View / Alt+Tab replaced by another Windhawk mod,
+  `WindhawkFlip3DSwitcher*`), `Shell_InputSwitchTopLevelWindow`. All rows kept (locked
+  `native` is the safe side); note under the table in `docs/compatibility.md`, research R9.
+  `$name:pt-BR` recorded as verified in research R3.
+- T052: `AGENTS.md` Status, `docs/roadmap.md` item 1 and `README.md` (status line and a
+  "Build" section with the quickstart commands) updated.
+- T053: `docs/credits.md` needs no entry: no other mod's code or idea was used (research
+  header, plan constitution check VI). Reading the `@name:pt-BR` metadata form from installed
+  mods is Windhawk's format, not a mod's idea.
+- T054: `contracts/engine-api.md`: `Classify` and `LevelOf` are `noexcept`, as in the code;
+  every other signature already matched.
+- `build.py --check` identical; `tools/test.py` 94/94 C++, 43/43 Python.
+
 ## Next step
 
-1. T048 is committed (`feat: wire diagnostic mode into the mod`, not pushed). T044–T047 and
-   earlier US3/US4 commits are also unpushed. T049 changed only handoff.md and tasks.md.
-2. **Constitution 2.0.0** is committed (`92e6101`) with the spec changes (FR-013a, FR-023a,
-   SC-008, acceptance step 8), README line 5 and the AGENTS.md rule.
-3. **R8 replanned (2026-11-13, not committed, waiting for the maintainer's review)**: research
-   R8 has a revised decision (only `FindResourceExW` / `FindResourceW` hooked; they arm a
-   thread CBT hook that records `HWND → template` for `#32770` by module and disarms itself;
-   unload unhooks every armed CBT hook and waits for running callbacks; no page capture; cap
-   chain control → nearest hosted page → top-level, reason `CappedByPage`), plus a
-   "Superseded designs" note and a **Verify** list (a–e) for the re-spike. R6, R7, R16,
-   plan.md, data-model.md, contracts engine-api.md (`ClassifyIdentity` takes pages; no
-   `OnSheetPagesChanged`, no `pageModule`) and compatibility-doc.md (`capped by page`),
-   quickstart step 11 and tasks.md (new Phase 7, T055–T060; Polish is now Phase 8) are
-   updated. Points for the maintainer to confirm: the 2 s lookup expiry; the unload wait has
-   no time limit (an unload that waits beats a crash); a property sheet frame is always
-   `comctl32.dll` `1006`, so later specs choose sheets by a frame rule plus page rules.
-4. Replan committed (`59e86fe`). T055 done. T056–T057 committed (above). T058 written
-   (above) and committed as `refactor: capture dialog templates without modal hooks` (not
-   pushed). T059 and T060 committed together as `refactor: read hosted pages in the
-   compatibility engine` (not pushed); T060 changed only handoff.md and tasks.md. Next: T050 again from step 1 (step 11 now with
-   Run and Properties open while disabling, then using and closing them).
-5. T050 run 2 passed (above). Not committed yet: handoff.md, tasks.md, research.md R14 (copy
-   shortcut limit with elevated windows). Next: T051–T054 (Polish), then mark the pull request
-   ready.
+1. Push the branch and mark pull request #1 ready for review (only when the maintainer asks).
+2. After merge, the next spec is roadmap item 2, Explorer core (F01, F02, F06), started with
+   `/speckit-specify`. Open item for the maintainer: whether the readme should mention that
+   the copy shortcut does nothing while an elevated window has the focus (research R14).

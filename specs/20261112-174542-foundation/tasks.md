@@ -204,10 +204,10 @@ T050 can run again from step 1.
 
 - [X] T049 Run `python tools/build.py --check`, `--compile` and `python tools/test.py`; record the SC-004 timing printed by T021 in handoff.md
 - [x] T050 Live acceptance: run every step of [quickstart.md](quickstart.md) "Validate on the live system" (1–11) on the maintainer's machine with the maintainer; record the Windows build, results and any failing step in handoff.md (SC-003, SC-005, SC-006, SC-008). Run 1 stopped at step 11 (handoff); run 2 (after Phase 7) passed every step
-- [ ] T051 Confirm or correct the shell-surface classes from step 3 in `docs/compatibility.md` (research R9), and confirm `$name:pt-BR` from step 10 in research.md R3 (handoff open questions)
-- [ ] T052 [P] Update `AGENTS.md` "Status" and `docs/roadmap.md` to say the foundation spec is implemented, and `README.md` with the build commands from quickstart.md
-- [ ] T053 [P] Confirm `docs/credits.md` needs no entry for this spec (no mod inspired it; constitution VI) and say so in handoff.md
-- [ ] T054 Update [contracts/engine-api.md](contracts/engine-api.md) with the final signatures if any changed during implementation, then update handoff.md with state, decisions and next step
+- [X] T051 Confirm or correct the shell-surface classes from step 3 in `docs/compatibility.md` (research R9), and confirm `$name:pt-BR` from step 10 in research.md R3 (handoff open questions)
+- [X] T052 [P] Update `AGENTS.md` "Status" and `docs/roadmap.md` to say the foundation spec is implemented, and `README.md` with the build commands from quickstart.md
+- [X] T053 [P] Confirm `docs/credits.md` needs no entry for this spec (no mod inspired it; constitution VI) and say so in handoff.md
+- [X] T054 Update [contracts/engine-api.md](contracts/engine-api.md) with the final signatures if any changed during implementation, then update handoff.md with state, decisions and next step
 
 ---
 
