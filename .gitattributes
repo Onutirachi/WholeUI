@@ -7,3 +7,6 @@
 *.svg text
 *.ttf binary
 *.otf binary
+*.lib binary
+# Vendored Windhawk files are kept byte-identical to the release they came from.
+tools/windhawk-sdk/include/*.h -text

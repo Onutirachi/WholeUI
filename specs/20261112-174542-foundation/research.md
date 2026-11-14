@@ -1,0 +1,515 @@
+# Research: Foundation
+
+**Spec**: [spec.md](spec.md) | **Plan**: [plan.md](plan.md) | **Date**: 2026-11-12
+
+Each item records the decision, why, and what else was considered. Items marked
+**Verify** are decided but depend on a fact that can only be confirmed on the maintainer's
+machine or in CI; the first tasks confirm them and update this file.
+
+No other mod's code was read for this research. Facts about Windhawk come from the
+maintainer's local installation (`D:\Programas\Windhawk`, version 2.0.0-alpha.6), its
+command-line help, its editor workspace and the public Windhawk wiki.
+
+## R1. Windhawk version, compiler and flags (FR-004)
+
+**Findings**
+
+- The maintainer runs Windhawk **2.0.0-alpha.6**, portable, engine `Engine\2.0.0`, UI
+  language `pt-BR`, `AlwaysCompileModsLocally=0`. Its `Compiler` folder is empty: installed
+  mods were downloaded precompiled, so the bundled toolchain has not been fetched yet.
+- The editor workspace (`AppData\EditorWorkspace\compile_flags.txt`) lists the flags Windhawk
+  gives the language server, which mirror the compile flags:
+  `-x c++ -std=c++23 -target x86_64-w64-mingw32 -DUNICODE -D_UNICODE -DWINVER=0x0A00
+  -D_WIN32_WINNT=0x0A00 -D_WIN32_IE=0x0A00 -DNTDDI_VERSION=0x0A000008
+  -D__USE_MINGW_ANSI_STDIO=0 -DWH_MOD -include windhawk_api.h -Wall -Wextra
+  -Wno-unused-parameter -Wno-missing-field-initializers -Wno-cast-function-type-mismatch`.
+- Strings in `windhawk-core.dll` show the extra compile-only flags: `-DWH_MOD_ID=L"…"`,
+  `-DWH_MOD_VERSION=L"…"`, `-DWH_WINDHAWK_VERSION=…`, `-mguard=cf-nochecks`,
+  `-Wno-unneeded-internal-declaration`, `-Wno-deprecated-declarations`,
+  `-Wl,--export-all-symbols`, linking `windhawk.lib`, targets `i686`, `x86_64` and `aarch64`
+  `-w64-mingw32`, and precompiled header support. The optimization level is not visible as a
+  literal string.
+- `windhawk-cli.exe mod install --file <path>` compiles a local `.wh.cpp` with Windhawk's own
+  toolchain and flags and installs it; `--disabled` installs without enabling.
+
+**Decision**
+
+**Verified 2026-11-12** (the maintainer installed Windhawk's developer tools from the UI; a
+probe mod was compiled with `windhawk-cli mod install --file --disabled`, then removed):
+
+- `windhawk-cli` does not download the compiler: with an empty `Compiler` folder it fails
+  ("failed to run bin\clang++.exe"). The download is a UI action ("install dev tools").
+- Toolchain: **clang 20.1.3** (llvm-project `923a5c4f83d2`), **mingw-w64 13.0.0**, standard
+  llvm-mingw layout (`-rtlib=compiler-rt -unwindlib=libunwind -stdlib=libc++
+  -fuse-ld=lld`).
+- Windhawk files: `Compiler\include\windhawk_api.h`, `windhawk_api_internal.h`,
+  `windhawk_utils.h`, `windhawk_tool_mod.h`; import library `Engine\2.0.0_1\64\windhawk.lib`.
+- `Compiler\compile_flags.txt` adds `-Wno-pragma-pack` and
+  `-Wno-pragma-system-header-outside-header` to the editor flags listed above.
+
+**Decision**
+
+- CI compiles the generated file with the **public llvm-mingw release built on LLVM 20.1.3
+  (UCRT, x86_64 host)**, with the flags above plus the mod's `@compilerOptions`, for target
+  `x86_64-w64-mingw32` only (see R2). *Superseded by the setup findings below: Windhawk uses
+  the msvcrt, i686-host release.*
+- Windhawk's headers and `windhawk.lib` are not published as a separate download. The setup
+  task checks their license in the Windhawk repository; if it allows (Windhawk is
+  GPL-3.0, compatible with WholeUI), the four headers and the import library are copied into
+  `tools/windhawk-sdk/` with a note naming their Windhawk version. Otherwise CI generates the
+  import library from a `.def` listing the `Wh_*` exports and fetches the headers from the
+  Windhawk repository at the matching tag.
+
+**Setup findings (T002, T003; 2026-11-12)**
+
+- Windhawk's compiler is **llvm-mingw 20250417, msvcrt variant, i686 host**
+  (`llvm-mingw-20250417-msvcrt-i686.zip`), not UCRT/x86_64: `__MSVCRT_VERSION__` is `0x600`,
+  and `ramensoftware/windhawk-dependencies` (release v1.6) states that `windhawk-compiler-1.6`
+  is a byte-identical subset of that archive. Compared file by file: all compiler binaries
+  match. Windhawk 2.0's installer then (a) renames the runtime DLL imports in
+  `libc++.dll.a` / `libunwind.dll.a` to `libc++.whl` / `libunwind.whl`, (b) removes a duplicate
+  `IReference<boolean>` block from `windows.foundation.h`, (c) adds C++/WinRT (`include/winrt`),
+  WIL (`include/wil`) and the four Windhawk headers. (a) and (c) do not affect a compile check
+  of WholeUI, which uses neither C++/WinRT nor WIL; the DLL CI builds is never shipped. If
+  WholeUI ever uses C++/WinRT or WIL, CI must add them. (b) does: with the public header,
+  including `windows.ui.viewmanagement.h` fails (`boolean` is `unsigned char` in mingw-w64,
+  so `IReference<BYTE>` is defined twice). `src/tokens/system.cpp` defines that block's two
+  include guards (`____FIReference_1_boolean_FWD_DEFINED__`,
+  `____FIReference_1_boolean_INTERFACE_DEFINED__`) before the include, which gives the same
+  result as Windhawk's header; nothing else in the headers names that type. Found when CI
+  first compiled `system.cpp` (2026-11-14). To check locally with the pinned toolchain, set
+  `WINDHAWK_ROOT` to a folder without Windhawk.
+- The real compile flags come from `build_compile_args` in windhawk-core
+  (`src/windhawk-core/core/src/services/compiler/flags.rs`, public on `main`): `-std=c++23 -O2
+  -ffp-exception-behavior=maytrap -mguard=cf-nochecks -shared -s -DUNICODE -D_UNICODE
+  -Wno-unneeded-internal-declaration -Wno-deprecated-declarations`, the Windows version
+  defines, `-D__USE_MINGW_ANSI_STDIO=0 -DWH_MOD -DWH_MOD_ID -DWH_MOD_VERSION
+  -DWH_WINDHAWK_VERSION=0x<maj><min><patch>00`, `windhawk.lib`, `-include windhawk_api.h
+  -target x86_64-w64-mingw32 -Wl,--export-all-symbols`, then the mod's options. `-Wall
+  -Wextra` and the other warning flags are the editor set only; WholeUI's check adds them
+  on top (`warning_flags` in `tools/toolchain.json`).
+- License: Windhawk is GPL-3.0. The four headers ship with Windhawk (installer, developer
+  tools) and are not in the repository's source tree; `windhawk.lib` is the engine's import
+  library (23 `InternalWh_*` exports, a subset of `src/windhawk/engine/_exports.def`). Copied
+  unchanged into `tools/windhawk-sdk/` with version, source and hashes; no `.def` route.
+- `tools/toolchain.json` pins the archive (URL, SHA-256 `f38c6a8c…3090`, size) and the flags;
+  `tools/setup_toolchain.py` fetches it. A probe mod compiled with these flags, the SDK copy
+  and the mod libraries, with no warnings. (T015 later dropped `mod_libraries` from
+  `toolchain.json`: `--compile` appends the header's `@compilerOptions`, as Windhawk does.)
+- Locally, `build.py --compile` uses `$WINDHAWK_ROOT\Compiler` directly, so the maintainer's
+  check uses Windhawk's own files.
+
+**Alternatives considered**
+
+- Compile with MSVC or a system clang in CI: rejected, different compiler and headers
+  (FR-004 requires Windhawk's).
+- Compile through `windhawk-cli` in CI: rejected, the CLI cannot install the compiler, so
+  CI would still need the toolchain itself.
+
+## R2. Target architecture
+
+**Decision**: `@architecture x86-64` and `@include explorer.exe`. The mod is compiled and
+validated for x64 `explorer.exe` only.
+
+**Rationale**: the maintainer's machine is x64; FR-007 limits the mod to `explorer.exe`,
+which is a 64-bit process on x64 Windows. ARM64 is not tested by anyone on the project, and
+constitution I prefers "not loaded" to "loaded untested".
+
+**Alternatives**: no `@architecture` (compiles i686, x86_64 and, on Windhawk 2.0, aarch64):
+rejected until someone can validate ARM64.
+
+## R3. Localization (FR-009)
+
+**Findings**: installed mods use `// @name:pt-BR`, `// @description:pt-BR` (also `:pt`,
+`:es`, `:zh-CN`). `windhawk-core.dll` contains the messages "Metadata parameter can't be
+localized" and "$options and its language variants must be marked together", which show that
+setting fields (`$name`, `$description`, `$options`) accept language variants. No evidence was
+found of a localized readme block.
+
+**Decision**
+
+- Name and description: `@name:pt-BR`, `@description:pt-BR`.
+- Settings: `$name:pt-BR` and `$description:pt-BR` beside every `$name` / `$description`.
+- Readme: one readme containing English first and a "Português (Brasil)" section after it.
+  This is the gap the spec's assumptions allow for: Windhawk shows one readme, so both
+  languages are in it.
+- **Verify** at acceptance step 7: with Windhawk in pt-BR, name, description and settings show
+  in Portuguese; with Windhawk in another language, English shows. If `$name:pt-BR` is not
+  honored by the maintainer's version, the setting stays English and this item is updated.
+- **Verified** (T050 run 2, step 10, Windhawk 2.0.0-alpha.6): with Windhawk in Português
+  (Brasil), name, description and every setting's title and description show in Portuguese;
+  the readme shows its Portuguese section. `$name:pt-BR` and `$description:pt-BR` are honored.
+
+**Alternatives**: separate pt-BR mod: rejected (one mod, id `wholeui`).
+
+## R4. Build script (FR-001 to FR-003, FR-006)
+
+**Decision**: one Python 3 script, standard library only, `tools/build.py`. It produces
+`build/wholeui.wh.cpp` as an **amalgamation**: starting from `src/main.cpp`, each
+`#include "…"` of a project file is replaced by that file's content the first time it is
+seen (and dropped after), while `#include <…>` lines are kept. Metadata, readme and settings
+come from `src/mod/` and are written first between Windhawk's markers. The built-in
+compatibility rules are generated from `docs/compatibility.md` (R9). The output uses LF line
+endings, UTF-8 without BOM, no timestamps, and each inlined file is preceded by a
+`// ---- src/<path> ----` line, so builds are byte-identical (FR-003) and errors point to a
+source file. `--install` runs `windhawk-cli mod install --file build/wholeui.wh.cpp`
+(FR-006); the path to `windhawk-cli.exe` comes from `WINDHAWK_ROOT` or the default portable
+path, never hard-coded in the source tree.
+
+**Implementation notes (T012–T018)**
+
+- A repeated project include is replaced by `// (already inlined: src/<path>)`, so line
+  counts stay intact. After an inlined file the including file resumes with
+  `// ---- src/<path>:<line> ----` (the next line is `<line>` of that file). These two marker
+  forms map every generated line back to a source line; a source line that looks like a
+  marker fails the build. Compiler output has `wholeui.wh.cpp:<line>` rewritten to
+  `src/<path>:<line>`; the code excerpt clang prints still shows the generated line number.
+- Sources are read as UTF-8 with any BOM dropped and CRLF turned into LF; a `*/` in the readme
+  or settings fails the build (it would end the comment block).
+- `--compile` uses Windhawk's compiler in `$WINDHAWK_ROOT\Compiler` when present (its
+  headers are built in), else the pinned one with `-I tools/windhawk-sdk/include`; the import
+  library is always `tools/windhawk-sdk/64/windhawk.lib` (the engine folder name varies per
+  install). Flags come from `toolchain.json`, then `warning_flags`, then the header's
+  `@compilerOptions`.
+- `windhawk-cli mod install --file` installs the mod as **`local@wholeui`** (local installs
+  get the `local@` prefix).
+- `tools/test.py` derives the test flags from `compile_flags` (dropping the DLL-only ones and
+  every `-DWH_*`) and links statically, so the test executable needs no runtime DLLs.
+- `tests/tools/test_build.py` loads `tools/build.py` by path: `import build` can resolve to
+  PyPA's `build` package.
+
+**Rationale**: Python 3.14 is installed on the maintainer's machine and on GitHub runners,
+and `.gitignore` already anticipates Python tools. An amalgamation keeps normal
+`#include`-based sources, so the same files compile in unit tests and in the IDE.
+
+**Alternatives**: PowerShell (5.1 encoding defaults make byte-identical output fragile);
+Node (another runtime to install); a manifest-ordered concatenation (order kept by hand,
+easy to break; includes already describe the order).
+
+## R5. Unit tests (FR-005, SC-007)
+
+**Decision**: pure logic lives in files that include only the C++ standard library (no
+`windows.h`, no Windhawk API). Tests are compiled by the same llvm-mingw toolchain (native on
+the Windows runner) with a small in-repo test harness (`tests/unit/harness.h`, about 80
+lines: test registration, `CHECK`, `CHECK_EQ`, failure with file and line, non-zero exit). The
+build script's parser of `docs/compatibility.md` is tested with Python's `unittest`.
+
+**Rationale**: no new dependency (constitution VII); the tests need no desktop session.
+
+**Alternatives**: doctest or Catch2 (more features than needed, a vendored dependency to
+justify); GoogleTest (build system needed).
+
+## R6. Getting to know a window: lazy classification
+
+**Decision**: the engine classifies a window **when first asked** (by a later spec, or by
+diagnostic mode) and caches the result per `HWND`. The only work done at window creation is
+recording a fact that cannot be read later: the dialog template ID (R7, R8). No global
+window creation hook, no per-window subclassing.
+
+**Rationale**: in this spec nobody asks, so the mod costs nothing in normal use (FR-008,
+FR-028). Later specs ask at the moment they would change a window.
+
+**Cache validity**: an entry stores the window's thread ID and class atom; a lookup that finds
+a different thread or atom (HWND reused) recomputes. Entries for destroyed windows are
+dropped on the next settings change or when the cache passes 4,096 entries (a sweep with
+`IsWindow`). Classification state lives only in the mod's memory, so unloading frees it
+(FR-029).
+
+## R7. Identity fields and how each is read (FR-010, FR-021)
+
+| Field | In-process (`explorer.exe`) | Other process (diagnostic only) |
+|---|---|---|
+| Process image | `GetModuleFileNameW(nullptr)` → file name | `GetWindowThreadProcessId` + `OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION)` + `QueryFullProcessImageNameW` |
+| Creating module | `GetWindowLongPtrW(GWLP_HINSTANCE)` → `GetModuleFileNameW` | same `HINSTANCE` value + `OpenProcess(PROCESS_QUERY_INFORMATION \| PROCESS_VM_READ)` + `GetModuleFileNameExW`; "unknown" when access is denied (elevated or protected processes) |
+| Window class | `GetClassNameW` | `GetClassNameW` (works across processes) |
+| Template ID | from the dialog facts store (R8); "not a dialog" when the class is not `#32770`; "unknown" for a dialog created before the mod loaded or whose template was not found through `FindResource*` on the creating thread | always "unknown" for dialogs |
+
+All are documented Win32 functions. File names are compared case-insensitively, without the
+path. "Creating module" is the `HINSTANCE` the creator passed to `CreateWindowEx` /
+`CreateDialog*`: for `sysdm.cpl` that is `sysdm.cpl`, which matches
+`docs/compatibility.md`. A caller that passes another module's `HINSTANCE` is identified by
+that module; this is the only reliable signal Windows keeps, and diagnostic mode shows what
+the engine sees, so a rule can be written against it.
+
+**Alternatives**: return address of the `CreateWindowExW` caller (needs a hook on every
+window creation and stack inspection; heavier and less stable); window titles (forbidden).
+
+## R8. Dialog template IDs and hosted pages (FR-013a, FR-023a)
+
+**Decision** (revised 2026-11-13 after T050 run 1 crashed Explorer on unload; replaces the
+first design and its T032 revision, summarized under "Superseded designs" below)
+
+- **No hook on a function that can wait or run a message loop** (constitution I, FR-023a).
+  The `user32` dialog functions (`CreateDialogParamW`, `DialogBoxParamW` and the `Indirect`
+  variants), `comctl32` `PropertySheetW` / `CreatePropertySheetPageW` and `kernelbase`
+  `LoadLibraryExW` are no longer hooked. `CreateDialog*` sends `WM_INITDIALOG`, whose handler
+  may open a message box; `LoadLibraryExW` runs `DllMain`s under the loader lock. Any of them
+  can still be on a thread's stack when the mod unloads.
+- **Only hooks**: `kernelbase` `FindResourceExW` and `FindResourceW`, which return at once.
+  When the type is `RT_DIALOG` and the call succeeds, the hook remembers `{module, name,
+  tick}` in a thread-local list (last 16 lookups; string names interned in a process-wide
+  table so the list holds pointers only) and **arms** a `WH_CBT` hook on the calling thread
+  if it is not armed. Cost outside dialogs: one comparison per call.
+- **The CBT hook records the template.** At `HCBT_CREATEWND` for a window of class `#32770`,
+  the template is the most recent remembered lookup whose module equals
+  `CREATESTRUCT.hInstance` (spike finding 3); that lookup is removed and `{HWND → template}`
+  goes into the dialog facts store. No match → nothing recorded (template "unknown"). At each
+  callback, lookups older than 2 s are dropped; when the list is empty, the hook disarms
+  itself after `CallNextHookEx` returns. Lookups never followed by a dialog therefore cost
+  one callback per window created on that thread, until the next creation after they
+  expire. The CBT hook changes nothing.
+- **Unload** (`Wh_ModUninit`): set a "stopping" flag (hooks and callbacks record nothing),
+  unhook every armed CBT hook from a process-wide registry `{threadId → HHOOK}` (from the
+  unloading thread), then wait until no `CbtProc` is running (an in-flight counter
+  incremented on entry and decremented as the last statement before `return`). The wait
+  never ends early: a callback still inside `CallNextHookEx` (another mod's hook) would
+  return into freed code. It is logged once if it lasts over 1 s. The facts store is cleared.
+- **Hosted pages need no capture.** A page of a property sheet (or any child dialog) is a
+  `#32770` with `WS_CHILD`; its module is its own `GWLP_HINSTANCE` (spike finding 5) and its
+  template comes from the CBT hook like any dialog. It is classified when first asked, like
+  any window; page windows are created hidden when their tab is first selected (finding 4),
+  so a later spec that asks at creation knows the page's level before it is shown
+  (FR-013a). The sheet's level no longer depends on its pages: the page list, `SheetPagesOf`,
+  `OnSheetPagesChanged`, the "late page" path and the `LoweredByPage` reason go away.
+- **Cap chain** (FR-013, FR-013a): a window's **host** is its nearest ancestor below the
+  top-level window that is a hosted page (class `#32770` with `WS_CHILD`), else its
+  top-level window. Effective level = min(own level, host's effective level). Reason
+  `CappedByPage` when the host is a page and lowered the level, `CappedByTopLevel` when the
+  host is the top-level window. A page is capped by its own host the same way, so nesting
+  works. Locked shell surfaces are still decided by the top-level identity first.
+- **Consequence for rules**: every property sheet frame is `#32770` created with
+  `HINSTANCE` = `comctl32.dll`, template `1006` (finding 2), so the frame of a Properties
+  dialog and of System Properties have the same identity apart from the process. A rule
+  naming `sysdm.cpl` matches that sheet's pages, not its frame. Which sheets a later spec
+  styles is decided by a rule for the frame (`module=comctl32.dll; template=1006`, narrowed
+  by process) plus one per page; a page left `native` inside a styled frame stays as Windows
+  draws it (constitution I, principle 2.0.0). Nothing changes in `docs/compatibility.md`
+  now, since every level in this spec is still only reported.
+- **Verify** (re-spike on `spike/20261113-unload-safe-dialogs`, logging only, never merged):
+  (a) with only the `FindResource*` hooks and the armed CBT hook, the Run dialog gets
+  `shell32.dll` `1003`, a sheet frame `comctl32.dll` `1006`, pages their own IDs (including
+  `rarext.dll` `"EXTARCINFODLG"`), Folder Options too; (b) how often a `RT_DIALOG` lookup is
+  not followed by a dialog, and how long the hook stays armed in normal use; (c)
+  `UnhookWindowsHookEx` called from the unloading thread removes a CBT hook armed on another
+  thread (the hook stops firing); (d) disabling the mod with the Run dialog and a Properties
+  dialog open, then closing them, does not crash Explorer and Windhawk does not stay on "mod
+  task in progress"; (e) page windows are created without `WS_VISIBLE` and a control's
+  ancestor chain is control → page → frame.
+
+**Re-spike findings** (T055, 2026-11-13, branch `spike/20261113-unload-safe-dialogs`, Windows
+11 build 26300, three `explorer.exe`). The spike implemented the decision above with logging
+only: `FindResourceExW` / `FindResourceW` hooks, the armed thread CBT hook with the 2 s expiry,
+the `{threadId → HHOOK}` registry and the in-flight wait at unload. Cases: Run; Properties of a
+WinRAR self-extracting `.exe` (opened twice: all tabs clicked, and left on its first tab);
+Folder Options. Ancestor chains were read from outside the process. **No finding contradicts
+the decision.**
+
+- (a) **Every dialog got its template**: 28 matched, 0 `#32770` created without a matching
+  lookup. Run `shell32.dll` `#1003`; sheet frames (Properties and Folder Options)
+  `comctl32.dll` `#1006`; Properties pages `shell32` `#1041` and `#16816`, `cryptui` `#145`,
+  `aclui` `#103`, `twext` `#102`, `acppage` `#5011`, `rarext` `"EXTARCINFODLG"`; Folder
+  Options pages `shell32` `#29959`, `#29960`, `#29961`. The Run dialog's lookup comes through
+  `FindResourceW`, which calls `FindResourceExW` inside: **T058 records only the outer call**
+  (a per-thread depth counter), or every lookup through `FindResourceW` is remembered twice.
+- (b) **Unmatched lookups**: while building a sheet, comctl32 looks up every page's template
+  twice; none of these becomes a window (32 expired in the session). Each page window is
+  preceded by a fresh lookup at the moment its tab is first selected (0 ms old when matched),
+  so the expired ones are never needed. Because expiry runs only in a callback, the hook stays
+  armed while a sheet sits idle after it opens: 2.3 s, 7.5 s and 16 s observed, with 46 to 101
+  windows (58 to 115 callbacks) seen meanwhile. Elsewhere the hook armed and disarmed within
+  the same millisecond (1 callback). Cost accepted as designed.
+- (c) **Unhooking another thread's hook works**: at unload the Folder Options thread still had
+  its hook armed (lookups pending); `UnhookWindowsHookEx` from the unloading thread returned
+  success, and later window creation on that thread (tabs clicked, options changed after the
+  unload) did not reach the freed callback.
+- (d) **Unload with modal dialogs open is safe**: disabled with Run, a Properties sheet and
+  Folder Options open; all three processes unloaded at once (in-flight wait 0 ms), no process
+  kept the DLL, Windhawk did not stay on "mod task in progress". After closing every dialog,
+  Explorer did not crash or restart (same process IDs, no Application error event).
+- (e) **Pages are created hidden and the chain is control → page → frame**: every page
+  `#32770` was created with `WS_CHILD` and without `WS_VISIBLE`, parent = the frame. For a
+  control, `GetAncestor(GA_PARENT)` is its page and `GA_ROOT` is the frame. `GetParent` on the
+  frame returns its **owner** (`StubWindow32` for Properties, `CabinetWClass` for Folder
+  Options), so the walk for hosted pages must stop at the top-level window (`GA_ROOT`) and
+  use `GA_PARENT`, never follow `GetParent` past it.
+
+**Spike findings** (T032, 2026-11-13, branch `spike/20261112-dialog-capture`, Windows 11
+build 26300, comctl32 6.0.26100.9711; still the evidence for the decision above). The spike
+hooked the four `user32` dialog functions, `PropertySheetW`, `CreatePropertySheetPageW`, plus
+`kernelbase` `FindResourceW` / `FindResourceExW`, and logged only. Cases: Run dialog; Properties
+of a WinRAR self-extracting `.exe` (third-party page from `rarext.dll`) and of a signed `.exe`;
+Properties of drive C: (Quota page from `dskquoui.dll`); Folder Options.
+
+1. **Pages are known before the sheet window exists.** In every sheet, `shell32.dll` (or
+   `explorerframe.dll` for Folder Options) creates every page through
+   `CreatePropertySheetPageW` and then calls `PropertySheetW` with **handles** (never inline
+   pages, never `PSH_MODELESS`). The header listed all pages, with module and template, before
+   the sheet's `#32770` was created, and that window is created without `WS_VISIBLE`. The
+   `rarext.dll` page was listed with template `"EXTARCINFODLG"` (a resource name, which the
+   contract already allows).
+2. **No dialog in these cases went through the non-indirect functions.** The Run dialog
+   (`shell32.dll`) calls `DialogBoxIndirectParamW` with a template copied to private memory, so
+   neither the call arguments nor a reverse search of the module's resources can name it.
+   Property sheets do the same: the sheet frame is a `CreateDialogIndirectParamW` with
+   `HINSTANCE` = `comctl32.dll` (resource `#1006`), and each page window is a
+   `CreateDialogIndirectParamW` from `comctl32.dll` with the page's `HINSTANCE` and a copied
+   template. As designed, template IDs would be "unknown" for every dialog observed.
+3. **The template ID is recoverable from the resource lookup.** Right before each indirect
+   call, the same thread calls `FindResourceExW(module, RT_DIALOG, name)` with `module` equal to
+   the `HINSTANCE` later passed to the dialog function (Run: `shell32.dll #1003`; sheet frame:
+   `comctl32.dll #1006`; pages: their own IDs). Other lookups can come in between (comctl32
+   looks up every page's template while building the sheet), so the match must take the most
+   recent lookup on the thread **for the same module**, not simply the last one.
+4. **Page windows are created when their tab is first selected**, each through the exported
+   `CreateDialogIndirectParamW` (so our hook sees it) with the sheet frame as parent. Every page
+   window matched a page listed in the header; no page was added later in these cases.
+5. **The page's module is its `HINSTANCE`, not the code that created it**: `cryptext.dll`
+   creates the Digital Signatures page with `HINSTANCE` = `CRYPTUI.dll`. Rules for that page
+   must name `cryptui.dll`. This matches R7 (`GWLP_HINSTANCE`).
+6. **Each Properties sheet runs modally on its own thread**; the CBT hook "for the duration of
+   the call" therefore lasts while the sheet is open, on that thread only.
+7. **comctl32 may not be loaded at `Wh_ModInit`**: short-lived `explorer.exe` processes (the
+   one started by `explorer.exe <folder>`, which hands off and exits) loaded the mod before
+   `comctl32.dll`. In the main `explorer.exe` only the v6 `comctl32.dll` was loaded.
+
+**Superseded designs** (kept for history). The first design hooked the four `user32` dialog
+functions and `comctl32` `PropertySheetW` / `CreatePropertySheetPageW`, armed the CBT hook
+for the duration of each dialog call, and lowered a sheet to the lowest level among its
+listed pages before it was shown. The T032 revision added the `FindResource*` hooks for
+indirect templates and a `LoadLibraryExW` hook to catch `comctl32` loaded late. T050 run 1
+showed the flaw: `DialogBoxIndirectParamW` runs the Run dialog's modal loop with our hook
+frame below it; after unload, closing the dialog returned into freed code and crashed
+Explorer (handoff, "T050 live acceptance, run 1"). Constitution 2.0.0 then removed the need
+to know pages before the sheet is shown, so the comctl32 hooks had no purpose left.
+
+**Alternatives**: wrapping the dialog procedure to catch `WM_INITDIALOG` (changes the window's
+`DWLP_DLGPROC`, even if briefly; rejected by FR-008); a global `SetWinEventHook` for object
+creation (asynchronous, arrives after the window is shown); hooking `CreateWindowExW`
+(sends `WM_CREATE`, whose handler can run a modal loop, and is called for every window);
+keeping the CBT hook armed for the life of every thread (one callback per window creation
+everywhere, for no gain); pinning the DLL during each CBT callback (the reference must be
+released from outside the DLL, for example by a thread started at `FreeLibrary`, which is
+heavy for a window-creation callback).
+
+## R9. Built-in rules from `docs/compatibility.md` (FR-014, FR-015)
+
+**Decision**: the build script parses the table in `docs/compatibility.md` and generates the
+built-in rules, so the two cannot drift. The table gets separate `Class` and `Template`
+columns (today one column); `—` means "not named". `to do` ships as `native`. Shell surfaces
+move to their own table, "Shell surfaces (always native)", whose rows become **locked** rules:
+when the top-level window matches a locked rule, the level is `native` and overrides are not
+consulted. A row that cannot be parsed fails the build with the line number. The format is in
+[contracts/compatibility-doc.md](contracts/compatibility-doc.md).
+
+Initial shell-surface rows (process `explorer.exe`), to confirm with diagnostic mode during
+acceptance: `Shell_TrayWnd`, `Shell_SecondaryTrayWnd`, `NotifyIconOverflowWindow`,
+`TopLevelWindowForOverflowXamlIsland`, `XamlExplorerHostIslandWindow`, `Progman`, `WorkerW`,
+`Shell_InputSwitchTopLevelWindow`. Start is a separate process
+(`StartMenuExperienceHost.exe`), where the mod does not run.
+
+**Verified** (T051, build 26300.9711): five rows confirmed live; three not seen on that build
+and kept as locked rows (details under the table in `docs/compatibility.md`).
+
+## R10. Overrides setting format (FR-016, FR-017, FR-021b)
+
+**Decision**: S6 is a Windhawk array of **strings**, one override per string, in a short
+`field=value; …; level=…` syntax (contract:
+[contracts/settings.md](contracts/settings.md)). The diagnostic copy shortcut produces
+exactly such a string, so pasting it into one new array item is the whole workflow.
+
+**Rationale**: Windhawk's array-of-objects settings are edited field by field and cannot be
+pasted as one item; FR-021b asks for a ready-to-paste override.
+
+**Alternatives**: array of objects with `process`, `module`, `class`, `template`, `level`
+(friendlier fields, but no single paste); one multi-line text (harder to edit, one error could
+hide others).
+
+## R11. System mode, accent and text scale (FR-025)
+
+**Decision**: read all three from the documented WinRT `Windows.UI.ViewManagement.UISettings`
+class: `GetColorValue(UIColorType::Accent, AccentLight1-3, AccentDark1-3)` for the accent and
+its shades exactly as Windows computes them, `GetColorValue(Background)` to tell dark from
+light app mode (dark when the background is dark, Microsoft's documented method),
+`TextScaleFactor` for the text size. Changes arrive through `ColorValuesChanged` and
+`TextScaleFactorChanged`, handled on the mod's worker thread (R13). The object is created
+through the raw ABI (`RoGetActivationFactory`, link `-lruntimeobject`), with no C++/WinRT.
+If any read fails, the Windows defaults apply (light, accent `#0078D4` with its default
+shades, 100 %) and the failure is logged (spec edge case).
+
+**Verified 2026-11-12**: Windhawk's toolchain ships `windows.ui.viewmanagement.h`
+(`__has_include` true in a probe compiled by Windhawk), so the project uses it and declares
+no WinRT interfaces itself.
+
+**Alternatives**: registry values (`AppsUseLightTheme`, `AccentPalette`, `TextScaleFactor`)
+with `RegNotifyChangeKeyValue`: simpler, but `AccentPalette` is undocumented binary data and
+the shades would be guessed; kept only as an idea, not implemented.
+
+## R12. Font availability (US4 scenario 4)
+
+**Decision**: at token resolution the mod asks DirectWrite's system font collection for the
+family "Segoe UI Variable Text" (`IDWriteFactory::GetSystemFontCollection` →
+`FindFamilyName`). Present: the font family token is "Segoe UI Variable" with the GDI face
+names "Segoe UI Variable Text" (type sizes below 20 px) and "Segoe UI Variable Display"
+(20 px and above). Absent: "Segoe UI" everywhere. The font check is an input to the pure
+resolver, so the fallback is unit-tested. The 20 px split will be revalidated in the Explorer
+core spec (F06).
+
+## R13. Threads and lifecycle (FR-023, FR-029)
+
+**Decision**: one worker thread per mod instance, started in `Wh_ModInit` and stopped in
+`Wh_ModUninit` (posted quit, then wait). It owns the WinRT `UISettings` object and its event
+registrations, the diagnostic overlay window and its timer. The compatibility engine has no
+thread: callers query it from their own threads. The rule set is an immutable snapshot
+swapped under an `SRWLOCK` when settings change (`Wh_ModSettingsChanged`); the cache is
+guarded by the same lock. Listeners (FR-019) are called after the lock is released.
+
+## R14. Diagnostic mode (FR-020 to FR-023, SC-005)
+
+**Decision**
+
+- **One instance per session**: `explorer.exe` can run as several processes (separate folder
+  windows). Only the instance that owns the named mutex `Local\WholeUI.Diagnostic` shows the
+  overlay; the others stay idle and retry when the owner exits. The mutex is taken on the
+  worker thread (a mutex belongs to the thread that waits on it) with a zero-timeout wait; an
+  idle instance retries every second from a thread timer on the worker, so it takes over
+  within a second of the owner turning the mode off, unloading or exiting. A mutex left
+  abandoned by an owner that crashed is ownership too. `diagnostic::Start()` / `Stop()` are
+  safe from any thread: they post to the worker, so requests apply in order.
+- **Cursor tracking**: a 50 ms timer reads `GetCursorPos` and `WindowFromPoint`. Identity is
+  refreshed when the window under the cursor changes or 100 ms after the cursor stops, which
+  meets the 200 ms budget. No low-level mouse or keyboard hook, so input latency is unchanged.
+- **Overlay**: a layered, click-through window (`WS_EX_LAYERED | WS_EX_TRANSPARENT |
+  WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST`), never activated, drawn with
+  Direct2D/DirectWrite into a DIB and pushed with `UpdateLayeredWindow`, using token values
+  (font, radius, palette). It sits 16 px below-right of the cursor and flips to the other side
+  near screen edges, so it never covers the inspected point; click-through windows are not
+  returned by `WindowFromPoint`.
+- **Copy shortcut**: **Ctrl+Alt+Shift+C**, detected by `GetAsyncKeyState` in the same timer
+  (edge-triggered). Polling does not consume the keystroke (FR-022), and it is checked only
+  while diagnostic mode is on. The shortcut is fixed, not a setting. Known limit (T050 run 2):
+  while an elevated window (for example `sysdm.cpl`) has keyboard focus, User Interface
+  Privilege Isolation hides the keys from Explorer and nothing is copied; the overlay itself
+  still works. Workaround: focus another window (the taskbar), keep the cursor over the
+  elevated one and press the shortcut. Accepted: WholeUI does not run in other processes in
+  this spec (FR-007), and the workaround is enough to report such a window. The readme
+  states the limit and the workaround in both languages.
+- **Clipboard**: `OpenClipboard(overlay)` / `SetClipboardData(CF_UNICODETEXT)` with two lines
+  (contract: [contracts/compatibility-doc.md](contracts/compatibility-doc.md)).
+- **Other processes**: identified as in R7; the level shown is what the rules give for that
+  identity, with "unknown" fields not matching.
+- **Off / unload**: the window is destroyed, timer killed, mutex released at once.
+
+## R15. Design token values (FR-024)
+
+**Decision**: values from WinUI 3 / Fluent theme resources and the maintainer's reference
+settings, listed in full in [data-model.md](data-model.md#design-token-set). Text scale
+multiplies type sizes and line heights only (FR-026). Colors are stored as ARGB.
+
+## R16. Windows internals used
+
+None. Every Windows function in this plan is documented (Win32, WinRT, DirectWrite,
+Direct2D); function hooks target only the documented `kernelbase.dll` exports
+`FindResourceExW` and `FindResourceW`, and the thread `WH_CBT` hook is the documented
+`SetWindowsHookExW` (R8). Class names in the built-in rules (R9) are observed values, not
+APIs; when Windows changes one, the rule stops matching and the window falls back to
+`native`, which is safe.

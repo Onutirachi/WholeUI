@@ -7,9 +7,10 @@ principles, scope and workflow, and it overrides this guide.
 
 ## Status
 
-New project. No spec is written yet. Features are listed with IDs in
+The foundation spec (`specs/20261112-174542-foundation/`) is implemented: build script, CI,
+compatibility engine, design tokens and diagnostic mode. Features are listed with IDs in
 [docs/product.md](docs/product.md) and the order of specs is in
-[docs/roadmap.md](docs/roadmap.md).
+[docs/roadmap.md](docs/roadmap.md); the next spec is Explorer core.
 
 ## Starting a session
 
@@ -50,6 +51,9 @@ continue from it alone.
 - **No options by default.** The WinUI look, GPU acceleration and animations are not
   optional; a new setting needs a justification in the spec (constitution IV).
 - Never edit the generated `.wh.cpp` by hand; change the sources and rebuild.
+- **Never hook a function that can wait or run a message loop** (modal dialogs, message
+  boxes, `GetMessage`, waits). A call still running at unload returns into freed code and
+  crashes the process (constitution I).
 
 ## Spec workflow (Spec Kit)
 

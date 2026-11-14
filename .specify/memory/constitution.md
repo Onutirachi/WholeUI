@@ -1,5 +1,15 @@
 <!--
 Sync Impact Report
+- Version: 1.0.0 -> 2.0.0 (2026-11-13)
+- Principle I redefined: "never half styled" becomes "never harder to read or use"; a whole
+  hosted page (for example a third-party Properties tab) may stay as Windows draws it inside
+  a handled window; single controls are still never mixed. Added: unloading must be safe at
+  any moment, so no hook on a function that can wait or run a message loop.
+- Follow-up: foundation spec FR-013a and edge cases, research R8, plan, tasks; AGENTS.md
+  "Rules that are easy to break".
+- Templates: plan-template.md, spec-template.md, tasks-template.md need no change.
+
+Earlier:
 - Version: none -> 1.0.0 (initial ratification)
 - Added sections: Core Principles I-VII (IV: opinionated and lean; VI: original code, upstream as reference), Technology and Product Constraints, Licensing,
   Development Workflow, Governance.
@@ -19,9 +29,14 @@ first; other windows are added one at a time as they are validated.
 
 ### I. Never Worse Than Native
 
-- A window is either fully handled by WholeUI or left exactly as Windows draws it. A window
-  MUST NOT end up half styled (for example dark controls with light ones, or dark text on a
-  dark background).
+- No window may become harder to read or use than Windows draws it: no dark text on a dark
+  background, no missing labels or headers, no control that cannot be seen or reached.
+- The unit WholeUI handles or leaves alone is a window or a whole hosted page. A window is
+  either fully handled or left exactly as Windows draws it; inside a handled window, a hosted
+  page or child dialog that WholeUI cannot handle (for example a third-party tab in a
+  Properties dialog) MAY stay exactly as Windows draws it, as one intact rectangle. Single
+  controls MUST NOT be mixed: a handled window or page never contains unhandled controls of
+  its own, and a hosted page is never handled at a higher level than the window around it.
 - WholeUI MUST NOT change system-wide state that other programs read: no `SetSysColors`, no
   global `SystemParametersInfo` changes, no theme or registry changes outside the mod's own
   settings. Colors, fonts and metrics are changed only for the windows WholeUI handles,
@@ -34,9 +49,15 @@ first; other windows are added one at a time as they are validated.
   window.
 - Unloading or disabling the mod MUST restore every window it touched without a restart of
   the affected process where Windows allows it.
+- Unloading MUST be safe at any moment. WholeUI MUST NOT hook a function that can wait or run
+  a message loop (modal dialogs, message boxes, `GetMessage`, waits): a call still running
+  when Windhawk frees the mod would return into freed code and crash the process.
 
 Rationale: the mods WholeUI replaces broke native windows such as `sysdm.cpl` because they
 changed global colors and metrics; an exclusion list that cannot exclude is not an exclusion.
+A third-party page left as Windows draws it inside a styled window stays readable and usable;
+the failure to prevent is the unreadable window, not the mixed one. Hooking the modal dialog
+functions crashed Explorer when the mod was disabled with the Run dialog open (2026-11-13).
 
 ### II. The Compatibility List Is the Source of Truth
 
@@ -202,4 +223,4 @@ context.
 - Every plan MUST include a constitution check, and every pull request review MUST verify
   compliance. Deviations MUST be documented in the plan with a justification.
 
-**Version**: 1.0.0 | **Ratified**: pending maintainer approval | **Last Amended**: 2026-11-12
+**Version**: 2.0.0 | **Ratified**: pending maintainer approval | **Last Amended**: 2026-11-13
