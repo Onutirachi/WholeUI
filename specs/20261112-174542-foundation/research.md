@@ -480,7 +480,12 @@ guarded by the same lock. Listeners (FR-019) are called after the lock is releas
   returned by `WindowFromPoint`.
 - **Copy shortcut**: **Ctrl+Alt+Shift+C**, detected by `GetAsyncKeyState` in the same timer
   (edge-triggered). Polling does not consume the keystroke (FR-022), and it is checked only
-  while diagnostic mode is on. The shortcut is fixed, not a setting.
+  while diagnostic mode is on. The shortcut is fixed, not a setting. Known limit (T050 run 2):
+  while an elevated window (for example `sysdm.cpl`) has keyboard focus, User Interface
+  Privilege Isolation hides the keys from Explorer and nothing is copied; the overlay itself
+  still works. Workaround: focus another window (the taskbar), keep the cursor over the
+  elevated one and press the shortcut. Accepted: WholeUI does not run in other processes in
+  this spec (FR-007), and the workaround is enough to report such a window.
 - **Clipboard**: `OpenClipboard(overlay)` / `SetClipboardData(CF_UNICODETEXT)` with two lines
   (contract: [contracts/compatibility-doc.md](contracts/compatibility-doc.md)).
 - **Other processes**: identified as in R7; the level shown is what the rules give for that

@@ -1,6 +1,6 @@
 # Handoff: Foundation
 
-**Updated**: 2026-11-13 (T059 committed, T060 checked) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
+**Updated**: 2026-11-13 (T050 run 2 passed) | **Spec**: [spec.md](spec.md) | **Branch**: `feat/20261112-174542-foundation`
 
 ## State
 
@@ -80,9 +80,8 @@ not installed locally; the scripts use nothing newer than 3.9.
 
 ## Open questions
 
-- Still to verify: `$name:pt-BR` honored in settings (R3, acceptance step 10); template
-  capture without dialog hooks and safe unload with modal dialogs open (R8 **Verify** a–e,
-  T055).
+- None blocking. `$name:pt-BR` was confirmed in T050 run 2 (step 10); T051 records it in
+  research R3.
 
 ## US2 APIs (tests and implementation, T020–T027)
 
@@ -654,6 +653,45 @@ $//'` after.
 - The clean build is installed and enabled (no overrides, diagnostic mode on). Listener:
   this session's scratchpad `dbwin.py` → `log.txt`.
 
+## T050 live acceptance, run 2 (2026-11-13): all 11 steps pass
+
+Windows 11 26H2, build 26300.9711; same other Windhawk mods enabled as run 1. Fresh
+`build.py --check --compile --install` of the committed code (the mod had been left disabled
+after T060). An independent inspector (scratchpad `inspect.py`: `WindowFromPoint`, class,
+`GWLP_HINSTANCE` module, process, `GA_ROOT`) ran beside the overlay for steps 3–5.
+
+1. DLL loaded only in the 3 `explorer.exe` (48468, 67588, 70204); no warning.
+2. Maintainer used Explorer, taskbar, Start, a context menu and Properties with diagnostic
+   mode off: nothing different; no warning in the log.
+3. Explorer (`CabinetWClass` / `explorerframe.dll`), taskbar (`Shell_TrayWnd` /
+   `explorer.exe`), Properties (`#32770` / `comctl32.dll`, page `shell32.dll`), Notepad's Open
+   dialog (`#32770` / `comdlg32.dll`) all match the inspector. `sysdm.cpl`
+   (`systempropertiescomputername.exe`, elevated) shows "not running WholeUI" with unknown
+   module and templates. SC-005: rest-to-update 121–134 ms over 225 updates.
+4. Button inside Properties: control and top-level shown.
+5. Copy gives one override line and one table row. **Known limit**: with the elevated
+   `sysdm.cpl` focused nothing is copied (UIPI hides the keys from Explorer); with the focus on
+   the taskbar and the cursor over it, it copies (`process=systempropertiescomputername.exe;
+   class=#32770; level=native`, `—` for module). Recorded in research R14; the readme does not
+   mention it (maintainer to decide whether it should).
+6. Override from the Windhawk UI → `visual` in all 3 processes without restarting Explorer;
+   removed → `native`.
+7. `title=Explorer; level=full` → `override 0 ignored: unknown field "title"` in each process.
+8. `class=Shell_TrayWnd; level=full` loaded, taskbar stays `native` (shell surface).
+9. Text size 150/125/100 %, light/dark, accent orange `#F7630C` and back: one `[tokens]
+   resolved` line per change per process, correct values.
+10. Windhawk in Português (Brasil): description, settings titles and descriptions in
+    Portuguese; readme has the Portuguese section. ("Remove all items" / "Reset to default"
+    are Windhawk's own strings.)
+11. Diagnostic mode off → `overlay removed` at once. With the mod loaded, Run and Properties
+    (AppSandbox.exe) opened, plus two older Properties: disabled from the Windhawk UI →
+    finished at once, DLL gone from every process; dialogs used and closed normally; same
+    Explorer PIDs, no Application error event (1000/1001/1002). SC-008 met.
+
+- Unload lines (`[dialogs] unloaded`, `[worker] stopped`) are verbose, so with diagnostic mode
+  off they are not in the log; that is expected.
+- State left: mod **disabled** in Windhawk (from step 11), no overrides, diagnostic mode off.
+
 ## Next step
 
 1. T048 is committed (`feat: wire diagnostic mode into the mod`, not pushed). T044–T047 and
@@ -677,3 +715,6 @@ $//'` after.
    pushed). T059 and T060 committed together as `refactor: read hosted pages in the
    compatibility engine` (not pushed); T060 changed only handoff.md and tasks.md. Next: T050 again from step 1 (step 11 now with
    Run and Properties open while disabling, then using and closing them).
+5. T050 run 2 passed (above). Not committed yet: handoff.md, tasks.md, research.md R14 (copy
+   shortcut limit with elevated windows). Next: T051–T054 (Polish), then mark the pull request
+   ready.
