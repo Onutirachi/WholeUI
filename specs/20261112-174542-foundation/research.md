@@ -491,7 +491,8 @@ guarded by the same lock. Listeners (FR-019) are called after the lock is releas
   Privilege Isolation hides the keys from Explorer and nothing is copied; the overlay itself
   still works. Workaround: focus another window (the taskbar), keep the cursor over the
   elevated one and press the shortcut. Accepted: WholeUI does not run in other processes in
-  this spec (FR-007), and the workaround is enough to report such a window.
+  this spec (FR-007), and the workaround is enough to report such a window. The readme
+  states the limit and the workaround in both languages.
 - **Clipboard**: `OpenClipboard(overlay)` / `SetClipboardData(CF_UNICODETEXT)` with two lines
   (contract: [contracts/compatibility-doc.md](contracts/compatibility-doc.md)).
 - **Other processes**: identified as in R7; the level shown is what the rules give for that

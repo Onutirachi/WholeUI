@@ -706,10 +706,16 @@ after T060). An independent inspector (scratchpad `inspect.py`: `WindowFromPoint
 - T054: `contracts/engine-api.md`: `Classify` and `LevelOf` are `noexcept`, as in the code;
   every other signature already matched.
 - `build.py --check` identical; `tools/test.py` 94/94 C++, 43/43 Python.
+- First CI run since US2 failed: the public llvm-mingw `windows.foundation.h` defines
+  `IReference<BYTE>` twice (Windhawk ships a fixed copy). `src/tokens/system.cpp` now defines
+  the duplicate block's include guards (research R1); folded into `feat: add system token
+  reads`. Both toolchains compile and pass the tests (`WINDHAWK_ROOT` pointed at an empty
+  folder forces the pinned one).
 
 ## Next step
 
-1. Push the branch and mark pull request #1 ready for review (only when the maintainer asks).
+1. The readme now states the copy-shortcut limit with elevated windows and its workaround
+   (both languages; research R14). The branch is pushed and pull request #1 is ready for
+   review; the maintainer merges it.
 2. After merge, the next spec is roadmap item 2, Explorer core (F01, F02, F06), started with
-   `/speckit-specify`. Open item for the maintainer: whether the readme should mention that
-   the copy shortcut does nothing while an elevated window has the focus (research R14).
+   `/speckit-specify`.

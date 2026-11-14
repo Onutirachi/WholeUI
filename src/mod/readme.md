@@ -27,6 +27,9 @@ report a broken window.
 
 The shortcut is observed, not captured: the app under the cursor also receives
 Ctrl+Alt+Shift+C.
+While a window running as administrator has the keyboard focus, Windows hides the keys from
+WholeUI and nothing is copied. To copy such a window, click the taskbar first, then point at
+the window and press the shortcut.
 
 ## Overrides
 
@@ -77,6 +80,9 @@ lista de compatibilidade, por exemplo para relatar uma janela com defeito.
 
 O atalho é observado, não capturado: o aplicativo sob o cursor também recebe
 Ctrl+Alt+Shift+C.
+Enquanto uma janela executada como administrador tem o foco do teclado, o Windows esconde as
+teclas do WholeUI e nada é copiado. Para copiar essa janela, clique primeiro na barra de
+tarefas, depois aponte para a janela e pressione o atalho.
 
 ### Exceções
 
